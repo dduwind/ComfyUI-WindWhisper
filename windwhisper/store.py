@@ -320,6 +320,63 @@ def slim_msgs(cid, msgs):
     return out
 
 
+# 删消息之后清孤儿图（2026-09-23 加，配合"右键删除消息 + 撤销"）。
+#
+# 为什么**不能立刻删**：用户点删除是"直接删 + 几秒内可撤销"，
+# 撤销窗口里那条消息（和它引用的图）得能原样回来。立刻删文件的话
+# 撤销回来就是一张破图 —— 而且文件名是内容哈希，重发也救不回同一个名字。
+#
+# 所以留宽限期：只清 mtime 超过 grace 秒的孤儿。
+# 撤销窗口是秒级、宽限期是分钟级，差两个数量级，撤销必然安全。
+# 代价只是孤儿图多躺一会儿 —— 反正下次保存这个会话时会再扫一遍。
+#
+# 引用计数**现算**（扫一遍 msgs 里还活着的名字），不落盘维护计数器：
+# 落盘的计数一旦和实际消息不同步，就会出现"图还在、计数说没了"这类最难查的破图。
+IMAGE_GC_GRACE_SEC = 600
+
+
+def gc_images(cid, msgs, grace=IMAGE_GC_GRACE_SEC):
+    """清掉这个会话里已经没人引用的图，返回删掉的**文件数**。
+
+    两个刻意的设计：
+      · **永远不抛异常** —— 调用点是 save_chat，一次清理失败绝不能把
+        "保存会话"本身变成失败（跟 delete_images 同一个尺度）。
+      · 只认白名单内的文件名 —— 目录里混进别的东西（比如编辑器留下的临时文件）
+        时，宁可不动它，也不要替用户删文件。
+    """
+    if not safe_id(cid):
+        return 0
+    d = images_dir(cid, create=False)
+    if not os.path.isdir(d):
+        return 0
+
+    alive = set()
+    for m in msgs or []:
+        if isinstance(m, dict):
+            ref = m.get("image")
+            if isinstance(ref, str) and safe_image_name(ref):
+                alive.add(ref)
+
+    cutoff = time.time() - max(0, int(grace or 0))
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return 0
+
+    gone = 0
+    for name in names:
+        if name in alive or not safe_image_name(name):
+            continue
+        p = os.path.join(d, name)
+        try:
+            if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
+                os.remove(p)
+                gone += 1
+        except OSError:
+            continue          # 单个删不掉不影响其余 —— 下次保存还会再试
+    return gone
+
+
 def delete_images(cid):
     """删会话时连图一起删。删不掉也不报错 —— 别为了几张图把"删会话"变成失败。"""
     if not safe_id(cid):
@@ -535,13 +592,25 @@ def save_chat(cid, chat):
     chat["updated"] = now_ms()
     chat.setdefault("created", chat["updated"])
     msgs = chat.get("msgs")
-    if not isinstance(msgs, list):
+    # ⚠️ had_msgs 这个判断是**护栏**，不是废话：下面 GC 是按"当前 msgs 里还引用着谁"
+    #    来决定删什么的，所以**只有调用方真给了消息列表**时才敢跑。
+    #    否则一条"保存空白会话"的调用（msgs 缺省 → 当成 []）就会把整个会话的图
+    #    当成孤儿全清掉 —— 那是最典型的"看起来无害的一行代码在删用户数据"。
+    had_msgs = isinstance(msgs, list)
+    if not had_msgs:
         chat["msgs"] = []
     else:
         # ⚠️ 必经之路：内嵌的 base64 在这一步被换成素材文件名（见 slim_msgs）。
         # 少了这一句，任何一处调用方把原始 data URL 传回来就会写进会话 json。
         chat["msgs"] = slim_msgs(cid, msgs)
     write_json(chat_path(cid), chat)
+    # 顺手清孤儿图（宽限期内不动，理由见 gc_images）。放在写盘**之后**：
+    # 会话文件先落地，清理就算出岔子也不影响这次保存的结果。
+    if had_msgs:
+        try:
+            gc_images(cid, chat["msgs"])
+        except Exception as exc:                      # noqa: BLE001 —— 见 gc_images 的注释
+            logger.warning("[WindWhisper] 清理孤儿图出错（不影响保存）：%s", exc)
     return chat
 
 

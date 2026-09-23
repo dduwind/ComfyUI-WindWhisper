@@ -1231,7 +1231,12 @@ function renderMessages() {
       + copyBtn(i, isUser ? "复制这条" : "复制整条回复（含围栏标记）")
       + head + "</div>";
 
-    return '<div class="msg ' + (isUser ? "me" : "ai") + '">' + think + body + acts + "</div>";
+    // data-i 是右键菜单的锚：菜单挂在 #msgs 上做事件委托，靠它反查这条是第几条。
+    // ⚠️ 流式输出那条是 startBubble() 单独造的 DOM，**没有** data-i ——
+    //    也正因为它没进 msgs，那会儿不给删（见 msgPairRange）。
+    var msg = '<div class="msg ' + (isUser ? "me" : "ai") + '" data-i="' + i + '">'
+      + think + body + acts + "</div>";
+    return msg;
   }).join("");
 
   // 重新渲染后把"已推到节点"的渐变标记补回去
@@ -2242,6 +2247,140 @@ function doCopy(text, btn) {
   });
 }
 
+/* --------------------------------------------------- 消息右键菜单 / 删除 */
+
+/* 右键消息弹的小菜单（复制 / 删除）。
+ * 复用 .skmenu / .skmi 那套浮层样式 + 夹取定位 —— 面板里已经有一个同类菜单
+ * （skill 的「更多操作」），没必要再造第二种长相、第二套定位逻辑。 */
+var msgMenuEl = null;
+
+function closeMsgMenu() {
+  if (msgMenuEl && msgMenuEl.parentNode) msgMenuEl.parentNode.removeChild(msgMenuEl);
+  msgMenuEl = null;
+}
+
+/* 算「这一组」的范围：点提问带走它**下面**那条回答，点回答连带它**上面**那条提问。
+ *
+ * 为什么不做"只删这一条"：历史里 user/assistant 是成对的，单删一边会留下孤儿
+ * （比如 A2 变成"凭空冒出来的回答"），模型下一轮会当成自己在自说自话 ——
+ * prompt.py 的 trim_history 也是按"成对"这个前提裁的。
+ *
+ * 三种情况**就地降级**，不硬凑一对：
+ *   · 最后那条提问还没等到回答 → 只删它自己（不然永远删不掉）
+ *   · 流式输出中               → 不给删
+ *   · 下标越界 / 没有会话      → 不给删
+ *
+ * ⚠️ 流式输出中一律不给删，这不是"顺手加的保险"：那会儿回答还没进 msgs，
+ *    是 startBubble() 造的活动 DOM 节点，而 renderMessages() 是整体重写
+ *    innerHTML —— 一删就把正在输出的气泡直接抹了，可请求还在跑。
+ */
+function msgPairRange(idx) {
+  var msgs = (state.chat && state.chat.msgs) || [];
+  if (state.streaming) return null;
+  if (!(idx >= 0 && idx < msgs.length)) return null;
+
+  var from = idx, to = idx;
+  if (msgs[idx].role === "user") {
+    if (msgs[idx + 1] && msgs[idx + 1].role === "assistant") to = idx + 1;
+  } else if (msgs[idx - 1] && msgs[idx - 1].role === "user") {
+    from = idx - 1;
+  }
+  return { from: from, count: to - from + 1 };
+}
+
+function openMsgMenu(ev, idx) {
+  closeMsgMenu();
+  var msgs = (state.chat && state.chat.msgs) || [];
+  if (!(idx >= 0 && idx < msgs.length)) return;
+
+  var acts = [{ t: "复制这条", f: "copyMsg(" + idx + ",null)" }];
+  var range = msgPairRange(idx);
+  if (range) {
+    acts.push({
+      t: range.count > 1 ? "删除这一组（" + range.count + " 条）" : "删除这条",
+      f: "delMsgPair(" + idx + ")",
+      danger: true
+    });
+  } else if (state.streaming) {
+    acts.push({ t: "正在输出，等这条完了再删", disabled: true });
+  }
+
+  var el = document.createElement("div");
+  el.className = "skmenu";
+  el.innerHTML = acts.map(function (a) {
+    if (a.disabled) return '<div class="skmi hint">' + esc(a.t) + "</div>";
+    return '<button class="skmi' + (a.danger ? " danger" : "") + '" onclick="closeMsgMenu();'
+      + a.f + '">' + esc(a.t) + "</button>";
+  }).join("");
+  document.body.appendChild(el);
+
+  var r = el.getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(ev.clientX, window.innerWidth - r.width - 10)) + "px";
+  el.style.top = Math.max(8, Math.min(ev.clientY, window.innerHeight - r.height - 10)) + "px";
+  msgMenuEl = el;
+
+  // 点别处 / 滚动 / 改窗口就关掉。夹取定位只在开的那一瞬算一次，
+  // 不关的话菜单会停在一个跟锚点已经没关系的位置，看着像坏了。
+  setTimeout(function () {
+    document.addEventListener("click", closeMsgMenu, { once: true });
+  }, 0);
+  var pane = $("chat");
+  if (pane) pane.addEventListener("scroll", closeMsgMenu, { once: true, passive: true });
+  window.addEventListener("resize", closeMsgMenu, { once: true });
+  // ⚠️ 还必须盯着 blur：面板在 iframe 里，点**外面的画布**时 click 事件
+  //    根本传不进来（不在同一个文档），光靠上面那个 click 监听菜单会僵在屏幕上。
+  window.addEventListener("blur", closeMsgMenu, { once: true });
+}
+
+/* 「直接删 + 撤销」而不是先弹确认：删消息是高频动作，每次弹窗打断感太强。
+ * 撤销是**单层**的 —— 连删两次，第二次覆盖第一次。栈式回退听着更"完整"，
+ * 但"撤销到底退到哪一步"很难跟用户说清，单层反而不会被误解。 */
+var lastDel = null;      // {cid, from, items}
+
+/* 删除 / 撤销共用：渲染 + 落盘。
+ * 图**不在这层碰** —— 服务端的 save_chat 会顺手清孤儿（带宽限期，见 store.gc_images），
+ * 前端只管把 msgs 改对，别在这儿各删各的。 */
+function persistMsgs() {
+  renderMessages();
+  // 被删的那条若正是"已推到节点"的卡片，这个 id 会指向一个不存在的元素 ——
+  // 清掉，不然它一直挂着一个永远不会再生效的标记。
+  if (pushedCardId && !$(pushedCardId)) pushedCardId = null;
+  renderSyscap();
+  return WW.saveChat(state.chat.id, { msgs: state.chat.msgs });
+}
+
+function delMsgPair(idx) {
+  var range = msgPairRange(idx);
+  if (!range) { toast("这条现在删不了 —— 正在输出，或者已经不在了", true); return; }
+
+  var items = state.chat.msgs.splice(range.from, range.count);
+  if (!items.length) return;
+  lastDel = { cid: state.chat.id, from: range.from, items: items };
+
+  persistMsgs().catch(function () {
+    toast("删除没存到后端 —— 界面已经改了，刷新会回来", true);
+  });
+  toast("已删除 " + items.length + " 条", { act: "撤销", run: undoDelMsg });
+}
+
+function undoDelMsg() {
+  var d = lastDel;
+  if (!d) return;
+  lastDel = null;
+  // 会话已经换了就别硬插 —— 往另一个会话里塞消息是最难查的那类脏数据
+  if (!state.chat || state.chat.id !== d.cid) {
+    toast("已经切到别的会话了，撤销不了", true);
+    return;
+  }
+  // 用 apply + concat 而不是展开运算符：这个文件通篇 ES5 写法、iframe 里不做转译，
+  // 别为一行代码引入语法层面的差异。
+  Array.prototype.splice.apply(state.chat.msgs, [d.from, 0].concat(d.items));
+  persistMsgs().catch(function () {
+    toast("撤销没存到后端 —— 刷新会变回删除后的样子", true);
+  });
+  toast("已恢复 " + d.items.length + " 条");
+}
+
 /* ---------------------------------------------------------------- 目录导入 */
 
 function openImport(dir) {
@@ -2751,25 +2890,65 @@ function loadLibToComposer() {
   toast("已载入到输入框，可以在这条基础上继续改");
 }
 
-function toast(msg, keep) {
+/* 提示条。第二个参数收两种写法：
+ *   toast("…", true)                      ← 老写法：停留久一点（4.2s）
+ *   toast("…", { act:"撤销", run:fn })     ← 带一个按钮，停 8s
+ * 之所以做成兼容而不是改签名：现有三十多处调用都传布尔，一次性全改纯属自找风险。
+ * ⚠️ 按钮必须自己放开 pointer-events —— .toasts 容器是 none（免得它挡住面板），
+ *    不放开的话按钮看得见点不着。 */
+function toast(msg, opt) {
+  var asBool = (opt === true || opt === false);
+  var o = (!asBool && opt && typeof opt === "object") ? opt : {};
   var el = document.createElement("div");
   el.className = "toast";
   el.innerHTML = svg('<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>')
     + "<span>" + msg + "</span>";
+  if (o.act) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "tact";
+    b.textContent = o.act;
+    b.onclick = function () {
+      // 先把自己撤掉再跑回调 —— 否则回调里那条"已恢复"会紧挨着它，
+      // 两条提示摞在一起，看着像撤销没生效。
+      el.remove();
+      if (typeof o.run === "function") o.run();
+    };
+    el.appendChild(b);
+  }
   $("toasts").appendChild(el);
+  var ms = o.act ? 8000 : (opt ? 4200 : 2600);
   setTimeout(function () {
     el.style.opacity = "0";
     el.style.transition = "opacity .3s";
     setTimeout(function () { el.remove(); }, 300);
-  }, keep ? 4200 : 2600);
+  }, ms);
 }
 
 document.addEventListener("keydown", function (ev) {
   if (ev.key !== "Escape") return;
+  if (msgMenuEl) { closeMsgMenu(); return; }        // 消息菜单最小，最先关
   if (skMenuEl) { closeSkMenu(); return; }          // 小菜单优先关，别一把关掉整层
   if ($("mask").classList.contains("open")) { closeSheet(); return; }
   if ($("drawer").classList.contains("open")) { toggleDrawer(); return; }
   closePanel();
+});
+
+/* 右键消息 → 出菜单。
+ * ⚠️ 只在**真的点到消息**时才 preventDefault。别处得留住系统右键菜单 ——
+ *    提示词卡片 / 代码块要"选中一段再复制"，输入框要"粘贴"，那都是系统菜单独有的能力，
+ *    全拦掉等于把功能删了。图片也放过：右键存图是常做的事。
+ * ⚠️ 流式输出那条没有 data-i（见 renderMessages），这里自然就落空了。 */
+$("msgs").addEventListener("contextmenu", function (ev) {
+  var t = ev.target;
+  if (!t || !t.closest) return;
+  if (t.closest("pre,code,input,textarea,.ubimg")) return;
+  var wrap = t.closest(".msg");
+  if (!wrap) return;
+  var i = parseInt(wrap.getAttribute("data-i"), 10);
+  if (!(i >= 0)) return;
+  ev.preventDefault();
+  openMsgMenu(ev, i);
 });
 
 /* ------------------------------------------------------------------ 启动 */

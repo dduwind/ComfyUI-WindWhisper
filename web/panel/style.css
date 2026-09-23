@@ -571,6 +571,19 @@ body.dark .skcard.master .ico{color:#141414}
 }
 body.dark .toast{background:#EDEDEA;color:#1A1A18}
 .toast svg{width:14px;height:14px;flex:none}
+/* 提示条里的操作按钮（删除的「撤销」）。
+   ⚠️ pointer-events:auto 不能省 —— .toasts 容器是 pointer-events:none（免得整片
+      区域挡住面板），继承下来按钮就点不动，而且**看起来完全正常**，最难查的那种。 */
+.toast .tact{
+  flex:none;margin-left:2px;padding:3px 9px;border-radius:6px;
+  border:1px solid rgba(255,255,255,.30);background:transparent;color:inherit;
+  font-family:inherit;font-size:12px;line-height:1.4;cursor:pointer;
+  pointer-events:auto;transition:background .15s,border-color .15s;
+}
+.toast .tact:hover{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.55)}
+/* 深色面板下 .toast 是**浅底深字**（见上面 body.dark 那条），边框得跟着反过来 */
+body.dark .toast .tact{border-color:rgba(0,0,0,.26)}
+body.dark .toast .tact:hover{background:rgba(0,0,0,.08);border-color:rgba(0,0,0,.42)}
 /* 从**上方**落下 —— 跟 .toasts 挪到顶部配套。留在底部时才该从下往上冒。 */
 @keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 
@@ -813,6 +826,10 @@ body.dark .cfg-status code{background:rgba(255,255,255,.08)}
 .skmi:hover{background:var(--hover)}
 .skmi.danger{color:var(--err-fg)}
 .skmi.danger:hover{background:var(--err-bg)}
+/* 菜单里"暂时不可用"的那行（比如流式输出中说不能删）。用 div 而不是 disabled 按钮：
+   disabled 的 button 在部分浏览器上会被跳过 tab 焦点，而这条本来就不是操作。 */
+.skmi.hint{color:var(--fg3);cursor:default}
+.skmi.hint:hover{background:transparent}
 
 .imp-head{display:flex;align-items:center;gap:6px}
 .imp-list{
