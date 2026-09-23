@@ -1,0 +1,8 @@
+{
+  "name": "TVC 导演",
+  "category": "视频",
+  "icon": "play",
+  "inject": ["SKILL.md"],
+  "strip_sections": [],
+  "_note": "提示词与分镜结构为主。agents/ evals/ 是上游仓库的工程件，不注入。"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "女性人像导演",
+  "category": "人像",
+  "icon": "user",
+  "inject": [
+    "SKILL.md",
+    "skill/skill.md",
+    "skill/core/director-gate.md"
+  ],
+  "strip_sections": [],
+  "_note": "⚠️ 这个 skill 是「按需加载」架构：SKILL.md 里写着 Required loading order，要求模型自己依次去读 skill/ 下的 44 个文件（routes / tools / overlays / references 共 1010 KB）。WindWhisper 第一版没有「让模型读文件」的能力，全量注入又会直接爆上下文（光必读层就 155 KB ≈ 5 万 token），所以这里只注入最小可跑的三件：路由表 + canonical workflow + 导演门（18 KB）。输出格式的硬要求 SKILL.md 的 Operating rules 里已经写全（5 段式 + 两个 code block），不注入 output-format.md 也能出个大概。等阶段 2 加了「按需读取参考文件」再放开。"
+}

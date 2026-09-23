@@ -1,0 +1,8 @@
+{
+  "name": "Anima · 插画提示词",
+  "category": "插画",
+  "icon": "brush",
+  "inject": ["SKILL.md", "references/*.md"],
+  "strip_sections": [],
+  "_note": "纯提示词规则，无命令。artist-database.md 是 SKILL.md 里明确引用的风格库，必须一起注入。"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "迪金斯 · 电影摄影",
+  "category": "摄影",
+  "icon": "camera",
+  "inject": ["SKILL.md", "references/*.md"],
+  "strip_sections": [],
+  "_note": "纯摄影知识库，无命令。references/ 是十大技法的展开，SKILL.md 里指向它。"
+}

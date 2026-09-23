@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🍃 风语 · 提示词搭子</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 18a3 3 0 1 1-3-3h12a3 3 0 1 0-3-3v0"/></svg></span>
+    风语
+  </div>
+  <span class="spacer"></span>
+  <div class="pill" id="backendPill" onclick="openSettings()" title="点开后端设置">
+    <span class="dot"></span><span class="label" id="backendLabel">未配置</span>
+  </div>
+  <button class="ibtn" id="modeBtn" onclick="togglePanelMode()" title="居中放大">
+    <svg class="ic ic-max" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+    <svg class="ic ic-min" viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+  </button>
+  <button class="ibtn" id="themeBtn" onclick="toggleTheme()" title="切换到深色">
+    <svg class="ic ic-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/></svg>
+    <svg class="ic ic-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+  </button>
+  <button class="ibtn" onclick="openSheet('lib')" title="提示词库">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+  </button>
+  <button class="ibtn" onclick="closePanel()" title="关闭面板（Esc）">
+    <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+</header>
+
+<div class="skillbar">
+  <button class="ibtn" onclick="toggleDrawer()" title="会话列表">
+    <svg class="ic" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div class="chips" id="chips"></div>
+  <button class="chip tool" onclick="openSheet('skills')" title="Skill 设置">
+    <svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span>Skill</span>
+  </button>
+</div>
+
+<main class="chat" id="chat">
+  <div class="pushed-bar" id="pushedBar">
+    <span class="pb-badge" id="pushedBadge">
+      <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      <span id="pushedBadgeTxt">已推到节点</span>
+    </span>
+    <span class="pb-txt" id="pushedTxt"></span>
+    <button class="pb-btn" onclick="jumpToPushed()" title="跳到这条">
+      <svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
+      <span>定位</span>
+    </button>
+    <button class="pb-x" onclick="hidePushedBar()" title="收起">
+      <svg class="ic sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="syscap">
+    <svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l2.4 6.9H22l-5.8 4.3 2.2 7-6.4-4.6-6.4 4.6 2.2-7L2 8.9h7.6z"/></svg>
+    <span id="syscapTxt">正在读取配置…</span>
+  </div>
+
+  <!-- 消息全部由 app.js 渲染，这里只留容器 -->
+  <div class="msgs" id="msgs"></div>
+</main>
+
+<div class="composer">
+  <button class="ibtn" onclick="attachImage()" title="添加图片（本地模型大多不收图，先留着）">
+    <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+  </button>
+  <textarea id="composerInput" placeholder="接着说，或者说个新方向…&#10;Enter 发送 · Shift+Enter 换行 · 拖右下角可调整高度" rows="1"></textarea>
+  <span class="resize-hint">可拖高</span>
+  <button class="send" id="sendBtn" onclick="sendMessage()" title="发送">
+    <svg class="ic" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+  </button>
+</div>
+
+<div class="mask" id="mask" onclick="if(event.target===this)closeSheet()">
+
+  <div class="sheet skills" id="sheetSkills">
+    <div class="sheet-head">
+      <h2>Skill</h2>
+      <span class="search">
+        <svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="skSearch" placeholder="搜索 name / 描述 / 分类…" oninput="renderSkills()">
+      </span>
+      <span class="grow"></span>
+      <button class="tbtn" onclick="openSkillEditor(null)">
+        <svg class="ic sm" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>新建</span>
+      </button>
+      <button class="tbtn" onclick="openImport()">
+        <svg class="ic sm" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 11 15 14"/></svg><span>导入</span>
+      </button>
+      <button class="ibtn" onclick="closeSheet()">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="side" id="cats"></div>
+      <div class="grid" id="skGrid"></div>
+    </div>
+    <div class="sheet-foot">
+      <span class="hint">点卡片 = 设为人设（单选，决定输出格式）· 卡片右下<code>看</code>= 查看实际会发给模型的正文，<code>···</code>= 编辑 / 复制 / 导出 / 删除 · 底部芯片 = 附加参考（多选，只加内容不改格式）</span>
+      <button class="tbtn on" onclick="closeSheet()">完成</button>
+    </div>
+  </div>
+
+  <div class="sheet lib" id="sheetLib">
+    <div class="sheet-head">
+      <h2>提示词库</h2>
+      <span class="search">
+        <svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="libSearch" placeholder="搜索名称 / 分类 / 标签 / 正文…" oninput="renderLibItems()">
+      </span>
+      <span class="grow"></span>
+      <button class="tbtn" onclick="newLibItem()">
+        <svg class="ic sm" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>新建</span>
+      </button>
+      <button class="ibtn" onclick="closeSheet()">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="lib-body">
+      <div class="lib-list">
+        <div class="lib-cats" id="libCats"></div>
+        <div class="lib-items" id="libItems"></div>
+      </div>
+      <div class="lib-detail">
+        <div class="field">
+          <label>名称（留空会自动取正文第一句）</label>
+          <input id="libName">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>分类</label>
+            <input id="libCat" placeholder="如：充气泵">
+          </div>
+          <div class="field">
+            <label>标签（逗号分隔）</label>
+            <input id="libTags" placeholder="如：仰拍, 车内, 留白">
+          </div>
+        </div>
+        <div class="field" style="flex:1;min-height:0">
+          <label>提示词正文（可直接改）</label>
+          <textarea id="libText"></textarea>
+        </div>
+        <div class="lib-meta" id="libMeta"></div>
+        <div class="lib-acts">
+          <button class="mini" id="libFavBtn" onclick="toggleLibFavItem()">☆ 收藏</button>
+          <button class="mini" onclick="delLibItem()">
+            <svg class="ic sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>删除
+          </button>
+          <button class="mini" onclick="copyLibText()">
+            <svg class="ic sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>复制
+          </button>
+          <button class="mini primary" onclick="saveLibItem()">
+            <svg class="ic sm" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>保存
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <span class="hint">存在 <code id="libFile">user/default/WindWhisper/library.json</code> · 导出为纯文本</span>
+      <button class="tbtn" onclick="exportLib()">导出</button>
+      <button class="tbtn" onclick="loadLibToComposer()">载入回对话</button>
+      <button class="tbtn on" onclick="pushFromLib()">
+        <svg class="ic sm" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>推到节点
+      </button>
+    </div>
+  </div>
+
+  <!-- skill / system prompt 详情：显示的是「适配后实际会注入的正文」 -->
+  <div class="sheet skview" id="sheetSkView">
+    <div class="sheet-head">
+      <h2 id="skvName">Skill</h2>
+      <span class="tagpill" id="skvCat"></span>
+      <span class="grow"></span>
+      <button class="ibtn" onclick="closeSheet()" title="关闭">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="skv-wrap">
+      <div class="skv-stats" id="skvStats"></div>
+      <div class="skv-note" id="skvNote"></div>
+      <pre class="skv-body" id="skvBody"></pre>
+    </div>
+    <div class="sheet-foot">
+      <span class="hint" id="skvHint">这是实际会发给模型的内容</span>
+      <button class="tbtn on" onclick="closeSheet()">关闭</button>
+    </div>
+  </div>
+
+  <!-- skill 编辑器：写的是 SKILL.md 原文，不是剥离后的注入文本 -->
+  <div class="sheet skedit" id="sheetSkEdit">
+    <div class="sheet-head">
+      <h2 id="skeTitle">编辑 skill</h2>
+      <span class="grow"></span>
+      <button class="tbtn" onclick="backToSkills()">← 回到 skill 列表</button>
+      <button class="ibtn" onclick="closeSheet()" title="关闭">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="cfg-body">
+      <div class="field-row">
+        <div class="field">
+          <label>id（就是目录名）</label>
+          <input id="skeId" placeholder="留空自动生成">
+          <div class="fhint" id="skeIdHint"></div>
+        </div>
+        <div class="field">
+          <label>显示名</label>
+          <input id="skeName" placeholder="如：无线充气泵 · 电商主图">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>分类（skill 弹层左栏的 chips）</label>
+          <input id="skeCat" placeholder="如：人像 / 摄影 / 视频 / 通用">
+        </div>
+        <div class="field">
+          <label>图标</label>
+          <select id="skeIcon">
+            <option value="tag">tag · 标签</option>
+            <option value="brush">brush · 画笔</option>
+            <option value="camera">camera · 相机</option>
+            <option value="film">film · 胶片</option>
+            <option value="play">play · 播放</option>
+            <option value="box">box · 盒子</option>
+            <option value="user">user · 人物</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>描述（skill 列表里显示的那句话）</label>
+        <input id="skeDesc" placeholder="一句话说清这个 skill 管什么">
+      </div>
+
+      <div class="field">
+        <label>正文 —— 这段会原样进 system prompt，就是它的全部本事</label>
+        <textarea id="skeBody" rows="12" placeholder="写规则：怎么理解需求 · 按什么顺序决定画面元素 · 输出什么格式 · 什么情况要反问"></textarea>
+      </div>
+
+      <details class="adv">
+        <summary>高级：额外注入文件 / 适配说明</summary>
+        <div class="field">
+          <label>额外注入文件（每行一个 glob，相对 skill 目录；不填就只注入 SKILL.md）</label>
+          <textarea id="skeInject" rows="2" placeholder="references/*.md"></textarea>
+        </div>
+        <div class="field">
+          <label>适配说明（只在面板里显示，不会发给模型）</label>
+          <input id="skeNote" placeholder="如：脚本章节已剥离">
+        </div>
+      </details>
+
+      <div class="cfg-status" id="skeStatus">还没保存</div>
+    </div>
+    <div class="sheet-foot">
+      <span class="hint">写进 <code>user/default/WindWhisper/skills/&lt;id&gt;/SKILL.md</code> · 内置 skill 只读，想改先「复制到我的」</span>
+      <button class="tbtn" onclick="closeSheet()">取消</button>
+      <button class="tbtn on" id="skeSave" onclick="saveSkillEdit()">保存</button>
+    </div>
+  </div>
+
+  <!-- 目录导入：先只读扫描，勾选后才拷贝 -->
+  <div class="sheet skimport" id="sheetSkImport">
+    <div class="sheet-head">
+      <h2>导入 skill</h2>
+      <span class="grow"></span>
+      <button class="tbtn" onclick="backToSkills()">← 回到 skill 列表</button>
+      <button class="ibtn" onclick="closeSheet()" title="关闭">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="cfg-body">
+      <div class="cfg-presets">
+        <span class="cfg-lbl">常用位置：</span>
+        <button class="tbtn" onclick="useImportPreset('wb')">WorkBuddy 的 skills 目录</button>
+      </div>
+
+      <div class="field">
+        <label>要扫描的目录（绝对路径）—— 扫描只读，勾选后才会拷进来</label>
+        <div class="row-inline">
+          <input id="impDir" placeholder="C:\Users\你的用户名\.workbuddy\skills">
+          <button class="tbtn" onclick="scanImport()">扫描</button>
+        </div>
+      </div>
+
+      <label class="chk">
+        <input type="checkbox" id="impOverwrite"> 覆盖已存在的（默认不加盖，同名的会被跳过）
+      </label>
+
+      <div class="imp-head">
+        <button class="tbtn" onclick="toggleImportAll(true)">全选</button>
+        <button class="tbtn" onclick="toggleImportAll(false)">全不选</button>
+        <span class="grow"></span>
+        <span class="fhint">同名已在的话，会标出「已存在」或「覆盖内置」</span>
+      </div>
+
+      <div class="imp-list" id="impList"></div>
+      <div class="cfg-status" id="impStatus">还没扫描</div>
+    </div>
+    <div class="sheet-foot">
+      <span class="hint">导入 = 拷一份到 <code>user/default/WindWhisper/skills/</code>，<b>不动源文件</b></span>
+      <button class="tbtn on" id="impRun" onclick="runImportNow()" disabled>导入选中</button>
+    </div>
+  </div>
+
+  <!-- 后端设置 -->
+  <div class="sheet cfg" id="sheetCfg">
+    <div class="sheet-head">
+      <h2>后端设置</h2>
+      <span class="grow"></span>
+      <button class="tbtn" onclick="previewSystem()">看 system prompt</button>
+      <button class="ibtn" onclick="closeSheet()" title="关闭">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="cfg-body">
+      <!-- 常用地址按钮由 app.js 的 renderBasePresets() 渲染：默认几条写在代码里，
+           用户自己加的存 localStorage（升级插件不会冲掉你加的地址） -->
+      <div class="cfg-presets">
+        <span class="cfg-lbl">快速填地址：</span>
+        <span class="preset-row" id="basePresets"></span>
+        <button class="tbtn icon" id="presetAddBtn" onclick="toggleAddPreset()" title="添加一个 API 地址（官方云服务、中转站都行）">
+          <svg class="ic sm" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div class="addpreset" id="addPreset" hidden>
+        <input id="apName" placeholder="名称（可留空，自动取域名）">
+        <input id="apUrl" placeholder="https://api.openai.com/v1">
+        <button class="tbtn on" onclick="addBasePreset()">加进去</button>
+        <button class="tbtn" onclick="toggleAddPreset(false)">取消</button>
+      </div>
+
+      <div class="field">
+        <label>服务地址（填到 <code>/v1</code> 为止，别带 /chat/completions）</label>
+        <input id="cfgBase" placeholder="http://127.0.0.1:8080/v1">
+      </div>
+
+      <div class="field">
+        <label>API Key —— <b>本地服务留空即可</b>，留空时不发 Authorization 头</label>
+        <input id="cfgKey" type="password" placeholder="本地 llama.cpp / Ollama 不用填；OpenAI 这类云端服务必须填">
+      </div>
+
+      <div class="field">
+        <label>模型</label>
+        <div class="row-inline">
+          <input id="cfgModel" list="cfgModels" placeholder="点右边「拉取列表」选一个，也可以手填">
+          <datalist id="cfgModels"></datalist>
+          <button class="tbtn" onclick="pullModels()">拉取列表</button>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="field">
+          <label>温度</label>
+          <input id="cfgTemp" type="number" step="0.1" min="0" max="2">
+        </div>
+        <div class="field">
+          <label>最大输出 tokens</label>
+          <input id="cfgMaxTokens" type="number" step="128" min="64">
+        </div>
+        <div class="field">
+          <label>带几轮上下文</label>
+          <input id="cfgRounds" type="number" step="1" min="0" max="40">
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="chk"><input type="checkbox" id="cfgThinking"> 让模型先思考（reasoning）</label>
+        <div class="fhint">思考和正文<b>共用</b>上面那个「最大输出 tokens」。开着容易「思考写满、正文一个字都没轮到」—— 那在界面上就是一条空回答；而且要多等几十秒。默认关。</div>
+      </div>
+
+      <div class="field">
+        <label>显存策略（发消息前怎么给 ComfyUI 让显存）</label>
+        <select id="cfgVram">
+          <option value="off">off —— 什么都不做</option>
+          <option value="soft">soft —— 只清缓存，任何时候都安全（推荐）</option>
+          <option value="full">full —— 额外卸载模型，腾得最多，但下次出图要重新加载</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>全局提示词（每一轮对话都会追加到 system prompt 末尾，可留空）</label>
+        <textarea id="cfgExtra" rows="3" oninput="renderExtraChips()" placeholder="这里写你对所有回复的统一要求，比如：每条提示词末尾都带上 --ar 2:3…"></textarea>
+        <div class="chips" id="extraChips">
+          <button type="button" class="chip" data-k="note" onclick="toggleExtra('note')" title="默认是只给提示词、不写任何说明，点这里把说明加回来">附一句改动说明</button>
+          <button type="button" class="chip" data-k="alt" onclick="toggleExtra('alt')" title="每次给出 3 个风格不同的版本">给 3 个备选</button>
+          <button type="button" class="chip" data-k="neg" onclick="toggleExtra('neg')" title="末尾附一行负面提示词，适合 ComfyUI 的负面框">加负面提示词</button>
+          <button type="button" class="chip" data-k="short" onclick="toggleExtra('short')" title="删掉可有可无的修饰，让提示词更紧凑">更精简</button>
+        </div>
+        <div class="fhint">上面是快捷开关，点了会自动写进下面的框里 —— 写进去之后你可以随便改，改成什么样就按什么样发。</div>
+      </div>
+
+      <div class="cfg-status" id="cfgStatus">还没测试连接</div>
+    </div>
+    <div class="sheet-foot">
+      <span class="hint">配置存在 <code id="cfgPath">user/default/WindWhisper/config.json</code></span>
+      <button class="tbtn" onclick="testBackend()">测试连接</button>
+      <button class="tbtn on" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="t">
+      会话
+      <span class="grow"></span>
+      <button class="ibtn" onclick="toggleDrawer()">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="search" style="max-width:none;flex:1">
+        <svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="convSearch" placeholder="搜标题 / skill…" oninput="renderDrawer()">
+      </span>
+      <button class="ibtn" style="background:var(--brand-grad);color:var(--brand-fg)" onclick="newChat()" title="新建会话">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="convlist" id="convList"></div>
+  <div class="drawer-foot">
+    <button class="tbtn" style="width:100%;justify-content:center" id="archBtn" onclick="toggleArchived()">
+      <svg class="ic sm" viewBox="0 0 24 24"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>看归档的会话
+    </button>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<!-- api.js 必须在前 —— app.js 直接用全局 WW。两个都是普通脚本，不能用 module -->
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
