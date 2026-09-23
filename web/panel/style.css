@@ -82,6 +82,11 @@ body{
   content:'';position:absolute;top:0;left:0;right:0;height:1px;
   background:var(--hairline);pointer-events:none;
 }
+/* 大窗形态下标题栏就是"拖动把手"（外壳那条浅紫拖动条已去掉，见 app.js 的 bindTitleDrag）。
+   只在居中态给 move 光标才有意义 —— 边栏贴着右边，不给这个暗示。
+   里面的按钮自己带 cursor:pointer，不受影响。 */
+body.mode-modal .topbar,body.mode-modal .sheet-head{cursor:move}
+body.dragging,body.dragging .topbar,body.dragging .sheet-head{cursor:grabbing}
 .ibtn{
   width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:8px;
   border:none;background:transparent;color:var(--fg2);cursor:pointer;transition:.15s;
@@ -295,6 +300,33 @@ body.dark .msg.me .bubble{color:#141414}
 .mini.primary:hover{opacity:.9}
 .mini:disabled{opacity:.45;cursor:not-allowed}
 .mini.done{color:var(--brand);border-color:var(--brand-line)}
+
+/* ------------------------------------------------- 图片条（反推，2026-09-23） */
+/* ⚠️ `[hidden]` 那条兜底不能删 —— 下面给了 display:flex（作者样式），
+ * 它会盖掉 hidden 自带的 UA 样式 display:none，条子就永远藏不住了（同 .addpreset 那个坑）。 */
+.imgstrip[hidden]{display:none}
+.imgstrip{
+  flex:none;display:flex;align-items:center;gap:10px;padding:8px 12px;
+  border-top:1px solid var(--line);background:var(--bar-grad);
+}
+.imgstrip .ithumb{
+  width:52px;height:52px;flex:none;object-fit:cover;border-radius:8px;
+  border:1px solid var(--line2);background:var(--card);
+}
+.imgstrip .imeta{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.imgstrip .imeta b{font-size:12px;font-weight:500;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imgstrip .imeta span{font-size:10.5px;color:var(--fg3)}
+/* 用户气泡上方那张图：平时小图，鼠标停上去放大看清楚 —— 靠 CSS，不加 JS */
+.ubimg{margin-bottom:6px;max-width:min(240px,100%)}
+.ubimg img{
+  display:block;width:100%;border-radius:10px;border:1px solid var(--line2);
+  transition:transform .16s,box-shadow .16s;transform-origin:right bottom;
+}
+/* .msg.me 靠右，所以放大时以右下角为原点往左上长，不会顶出可视区右侧 */
+.ubimg img:hover{
+  transform:scale(1.5);position:relative;z-index:3;
+  box-shadow:0 12px 34px -12px rgba(0,0,0,.55);
+}
 
 /* ------------------------------------------------------ 输入区（可拖高） */
 .composer{
@@ -528,7 +560,10 @@ body.dark .skcard.master .ico{color:#141414}
 .drawer-foot{flex:none;padding:10px;border-top:1px solid var(--line)}
 
 /* ----------------------------------------------------------------- toast */
-.toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;width:max-content;max-width:92%}
+/* 位置：**面板顶部**，不在底部。顶栏 52 + 芯片条 46 = 98，再留 10 空隙 = 108。
+ * 原来写的是 bottom:24px，那正好压在输入框上，发消息 / 存库时弹一下就挡一下（用户提的）。
+ * pointer-events:none 照旧 —— 挡住看不见归挡住，点还是点得下去。 */
+.toasts{position:fixed;left:50%;top:108px;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;width:max-content;max-width:92%}
 .toast{
   display:flex;align-items:center;gap:8px;max-width:600px;
   padding:10px 14px;border-radius:8px;background:#1F1F1D;color:#F2F2EF;font-size:12px;line-height:1.5;
@@ -536,7 +571,8 @@ body.dark .skcard.master .ico{color:#141414}
 }
 body.dark .toast{background:#EDEDEA;color:#1A1A18}
 .toast svg{width:14px;height:14px;flex:none}
-@keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* 从**上方**落下 —— 跟 .toasts 挪到顶部配套。留在底部时才该从下往上冒。 */
+@keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 
 /* ==================== 窄屏降级（<720px，靠真实媒体查询） ==================== */
 @media (max-width:719px){

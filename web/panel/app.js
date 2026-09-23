@@ -40,6 +40,7 @@ var state = {
   lastMeta: null,        // 最近一次 /chat 的 meta（系统提示体积/上下文条数/显存释放）
   streaming: false,
   abort: null,
+  pendingImage: null,    // 已附加、还没发出去的那张图 {data,name,w,h}（压过的 data URL）
   libCat: "全部",
   libItems: [],          // 词库条目（来自 /windwhisper/library）
   libCats: [],           // 词库分类（后端算的，按最近用过的排前）
@@ -1212,8 +1213,16 @@ function renderMessages() {
       ? '<details class="thinkbox"><summary>思考过程（' + m.think.length + " 字）</summary><pre>"
         + esc(m.think) + "</pre></details>"
       : "";
+    // 用户这条可能带图（反推来的）：图挂在气泡上方。
+    // m.image 有两种形态，都得能显示（见 imageSrc）：
+    //   ① 本轮刚贴的 —— 压缩后的 data URL，还在内存里
+    //   ② 刷新/切会话读回来的 —— **素材文件名**（会话 json 里不再存 base64）
+    var ubimg = (isUser && m.image)
+      ? '<div class="ubimg"><img src="' + esc(imageSrc(m.image, state.chat && state.chat.id))
+        + '" alt="附带的图片"></div>'
+      : "";
     var body = isUser
-      ? '<div class="bubble">' + esc(m.text) + "</div>"
+      ? ubimg + '<div class="bubble">' + esc(m.text) + "</div>"
       : assistantHtml(m, i) + (m.error ? errHtml({ hint: m.error }) : "");
 
     // 每条消息下面都挂一条操作带：复制图标 + （助手的）模型·耗时。
@@ -1246,12 +1255,15 @@ function sendMessage() {
 
   var el = $("composerInput");
   var text = (el.value || "").trim();
-  if (!text) return;
+  var img = state.pendingImage;
+  // 只贴了图、一个字没打也允许发 —— 反推本来就不需要你写什么，自动补一句指令
+  if (!text && !img) return;
   if (!canSend()) return;      // 校验没过就别清输入框，你还能改
 
   el.value = "";
   autoGrow(el);
-  doSend(text);
+  if (!text) text = IMG_TIP;
+  doSend(text, img);
 }
 
 /* 发消息前的三道门。抽出来是因为「关掉思考重来」也得走同一套校验。 */
@@ -1262,10 +1274,17 @@ function canSend() {
   return true;
 }
 
-function doSend(text) {
-  state.chat.msgs.push({ role: "user", text: text, ts: Date.now() });
+/* img 有两种：{data} = 刚从文件读进来压过的图，{ref} = 历史里那条消息上的素材名。
+ * 内存副本里两种情况都存原样 —— 渲染时由 imageSrc() 分辨（见那边的注释）。 */
+function doSend(text, img) {
+  state.chat.msgs.push({ role: "user", text: text, image: img ? (img.data || img.ref) : null, ts: Date.now() });
   renderMessages();
   scrollToBottom(true);
+
+  // 图已经跟着这条消息走了，输入区那条预览撤掉（失败也撤 —— 这条消息本身就在，
+  // 实在要重发，点卡片/重新附加都比"取消勾选"直观）
+  state.pendingImage = null;
+  renderImgStrip();
 
   var holder = startBubble();
   state.streaming = true;
@@ -1276,7 +1295,13 @@ function doSend(text) {
   var acc = "", think = "";
 
   WW.streamChat(
-    { chatId: state.chat.id, text: text, masterId: state.masterId, refIds: state.refIds },
+    {
+      chatId: state.chat.id, text: text,
+      // 只发其中一条：新贴的给 data URL，重发历史那条给素材名（后端读文件补回 data URL）
+      image: img && img.data ? img.data : null,
+      imageRef: img && img.ref ? img.ref : null,
+      masterId: state.masterId, refIds: state.refIds
+    },
     function (ev) {
       if (ev.type === "meta") {
         onMeta(ev);
@@ -1358,7 +1383,10 @@ function retryNoThinking() {
   function go() {
     if (!canSend()) return;
     toast("思考已关掉，重来一次");
-    doSend(lastUser.text);
+    // 上一轮如果带了图，重发也得带上 —— 不然模型只能对着文字猜那张图长什么样。
+    // ⚠️ 这里拿到的 image 通常是**素材名**（切过会话 / 刷过页面之后就是），所以
+    // 不能用 `{data: …}` 硬包装，交给 imgArg 分辨。
+    doSend(lastUser.text, imgArg(lastUser.image));
   }
 
   // ① 关思考 → 等落盘 → 再重发
@@ -1422,12 +1450,17 @@ function onMeta(ev) {
   renderBackend();
   renderSyscap();
 
+  /* ⚠️ 这里**只在出问题时才弹**（2026-09-23 收敛）。
+   * 原来是无条件弹一条"释放了 N MB 显存 · 显存已清(…) · …"—— 每发一条消息弹一次，
+   * 用户嫌太频繁。可这些**正常信息本就已经在顶部 syscap 状态栏里**（显存 +NMB /
+   * 上下文条数 / 模型名），再弹一遍纯属重复。会弹的只剩真正需要你知道的：
+   *   · 人设/参考里有的 skill 没找到（静默少注入内容 = 必须知道）
+   *   · 显存协调真的出岔子（拿不到 / 失败 / 异常），别的 note 都是正常跳过
+   * 其余 note 不弹，但挂到 syscap 的 title 上，鼠标停一下照样能看到，信息没丢。 */
   var vr = ev.vram || {};
   var bits = [];
-  if (vr.freed_mb) bits.push("释放了 " + vr.freed_mb + " MB 显存");
-  else if (vr.did && vr.did.length) bits.push("显存已清（" + vr.did.join(" + ") + "）");
-  if (vr.note) bits.push(vr.note);
   if (ev.missing && ev.missing.length) bits.push("这些 skill 没找到：" + ev.missing.join("、"));
+  if (/失败|拿不到|异常/.test(vr.note || "")) bits.push(vr.note);
   if (bits.length) toast(bits.join(" · "), true);
 
   if (ev.title && state.chat && ev.title !== state.chat.title) {
@@ -1449,9 +1482,104 @@ function updateSendBtn() {
   }
 }
 
-function attachImage() {
-  toast("图片输入第一版不做 —— muse 已经把多模态做完了，追它没意义。"
-    + "想用图反推，可以先用你的 Img2Prompt 转成文字再粘进来。", true);
+/* ------------------------------------------------------------ 图片（反推用）
+ *
+ * 2026-09-23 加：之前这里是"图片输入第一版不做"的一句提示。现在真做了 ——
+ * 用户手上有 API 和 llama 两边都能看图的模型，反推是这插件最该有的功能之一。
+ *
+ * 三个设计决定（改动前先读，别把好的地方改坏）：
+ *   ① **在前端压缩**，最长边 1280、JPEG 0.82 起步，压完还超上限就继续降档。
+ *      不压的话手机照片 4~8MB → base64 再涨 1/3，本地 llama.cpp 光收请求就要好几秒。
+ *   ② **图进会话历史，但绝不是 base64**（2026-09-23 用户反馈"多来几次历史不得爆炸"后
+ *      改的）：图落地成 `images/<会话id>/img_<内容哈希>.jpg`，会话 json 里只留一个
+ *      二十来字符的文件名。多轮照样能引用同一张图，历史文件却还是纯文字大小。
+ *      于是界面上 `m.image` 有两种形态 —— 统一走 imageSrc() 转成 <img src>。
+ *   ③ 发送时只把**最近的总量控制在预算内**（见 IMG_KEEP_BYTES，后端那侧裁），
+ *      免得聊十轮之后每次请求都拖着十张图。
+ */
+var IMG_MAX_SIDE = 1280;              // 压缩后最长边（px）
+var IMG_MAX_CHARS = 900 * 1024;       // data URL 字符串的硬上限（base64 长度）
+var IMG_TIP = "参考这张图，把它反推成一份可直接出图的提示词。";
+
+/** 会话里那条消息的 m.image → 能给 <img src> 用的地址。
+ *    · `data:…`      本轮刚贴的，字还在内存里 → 直接用
+ *    · `img_xxx.jpg` 刷新 / 切会话读回来的 → 走后端读取路由按需取文件
+ *  返回的串外面都会过 esc()（query 里有 &），插进属性安全。 */
+function imageSrc(ref, cid) {
+  if (!ref) return "";
+  return /^data:/.test(ref) ? ref : WW.imgUrl(cid, ref);
+}
+
+/** m.image → doSend 的第二个参数。新贴的给 {data}，历史里的给 {ref} ——
+ *  重发上一条时两种都可能遇到，别只认其中一种。 */
+function imgArg(ref) {
+  if (!ref) return null;
+  return /^data:/.test(ref) ? { data: ref } : { ref: ref };
+}
+
+function attachImage() { $("imgFile").click(); }
+
+function clearImage() {
+  state.pendingImage = null;
+  renderImgStrip();
+}
+
+/** 文件 → Image → 压缩 → state.pendingImage。三步都失败得有话说，不能静默。 */
+function readImageFile(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type || "")) { toast("这个不是图片文件，换一张", true); return; }
+  var fr = new FileReader();
+  fr.onload = function () {
+    var img = new Image();
+    img.onload = function () { encodeImage(img, file.name); };
+    img.onerror = function () { toast("这张图读不出来，换 jpg / png / webp 试试", true); };
+    img.src = fr.result;
+  };
+  fr.onerror = function () { toast("读文件失败，可能是权限或文件被占用", true); };
+  fr.readAsDataURL(file);
+}
+
+/** 画进 canvas 再导出 JPEG。逐档降：先保画质，实在压不下去才动尺寸。 */
+function encodeImage(img, name) {
+  var plans = [
+    { side: IMG_MAX_SIDE, q: 0.82 },
+    { side: 1024, q: 0.72 },
+    { side: 800, q: 0.62 },
+    { side: 640, q: 0.52 }
+  ];
+  for (var i = 0; i < plans.length; i++) {
+    var p = plans[i];
+    var scale = Math.min(1, p.side / Math.max(img.width || 1, img.height || 1));
+    var w = Math.max(1, Math.round((img.width || 1) * scale));
+    var h = Math.max(1, Math.round((img.height || 1) * scale));
+    var cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h;
+    cv.getContext("2d").drawImage(img, 0, 0, w, h);
+    var data = cv.toDataURL("image/jpeg", p.q);
+    if (data.length <= IMG_MAX_CHARS) {
+      state.pendingImage = { data: data, name: name || "图片", w: w, h: h };
+      renderImgStrip();
+      return;
+    }
+  }
+  // 四档都超上限：图本身太大了（比如 8000px 的长截图），别硬发
+  toast("这张图压不到能发的尺寸，换一张小点的（建议最长边 2000 以内）", true);
+}
+
+function renderImgStrip() {
+  var el = $("imgStrip");
+  var im = state.pendingImage;
+  if (!el) return;
+  if (!im) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  // data URL 只含 [A-Za-z0-9+/=:] 和前缀，塞进属性里是安全的
+  el.innerHTML = '<img class="ithumb" src="' + im.data + '" alt="待发送的图片">'
+    + '<div class="imeta"><b>' + esc(im.name) + "</b>"
+    + "<span>" + im.w + "×" + im.h + " · " + fmtKB(im.data.length) + "（已压缩）</span></div>"
+    + '<button class="ibtn" onclick="clearImage()" title="撤掉这张图">'
+    + '<svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+    + "</button>";
 }
 
 function autoGrow(el) {
@@ -1495,9 +1623,18 @@ function bindChipsScroll() {
   }, { passive: false });
 
   var drag = null;
+  /* ⚠️ 必须**立刻把 drag 置空**，别退回成"只把 moved 重置"（2026-09-23 修的 bug）。
+   * 老写法是 setTimeout(function(){ drag.moved = false }) —— drag 对象永远不清，而
+   * **鼠标的 pointerId 恒为 1**，于是第一次拖动之后，之后每一次**没按键的鼠标移动**
+   * 都能通过 `ev.pointerId === drag.id` 这层校验、moved 又刚被重置成 false，
+   * 再挪过 4px 就重新开始横滑 —— 表现就是"手没按，芯片条自己跟着鼠标左右跑"，
+   * skill 一多（芯片条溢出）就彻底点不中目标了。大窗/小窗都是同一个组件，一起中招。
+   * 现在 drag 照常清空，"松手后那次 click 要不要吞掉"单独用 swallowClick 记。 */
+  var swallowClick = false;
 
   el.addEventListener("pointerdown", function (ev) {
     if (ev.button !== 0) return;
+    swallowClick = false;   // 新一次交互开始，先解掉上次可能残留的吞点击
     drag = { id: ev.pointerId, x: ev.clientX, left: el.scrollLeft, moved: false };
   });
 
@@ -1513,24 +1650,120 @@ function bindChipsScroll() {
     ev.preventDefault();
   });
 
-  // 松手后等一拍再清 moved —— click 是紧跟在 pointerup 后面的，
-  // 不拦住的话"滑一下"会顺手把滑过的那个 skill 设成人设。
+  // 松手即清 drag；"滑过之后的那次 click"照旧要拦，否则一滑就顺手切了人设。
   var clear = function () {
     if (!drag) return;
+    if (drag.moved) swallowClick = true;
+    drag = null;
     el.classList.remove("grabbing");
-    setTimeout(function () { if (drag) drag.moved = false; }, 0);
   };
   el.addEventListener("pointerup", clear);
   el.addEventListener("pointercancel", clear);
   el.addEventListener("pointerleave", clear);
 
   el.addEventListener("click", function (ev) {
-    if (drag && drag.moved) {
+    if (swallowClick) {
+      swallowClick = false;
       ev.stopPropagation();
       ev.preventDefault();
-      drag.moved = false;
     }
   }, true);
+}
+
+/* ------------------------------------------------------------ 拖标题栏挪窗 */
+
+/* 居中大窗形态下，拖**标题栏**挪整个面板（用户要"挪开窗户看下面的节点"）。
+ *
+ * 为什么是 postMessage 而不是自己挪：面板在自己的 iframe 里，动不了外面的位置；
+ * 而且"别拖出屏幕"这个边界只有外壳算得出来（它知道视口和窗尺寸）。
+ * 所以这里只上报"这一拖走了多少像素"，夹取 + 记忆 + 落 transform 全在外壳的
+ * onPanelDrag（web/windwhisper.js）里。协议：
+ *   { type:"windwhisper/modal-drag", phase:"start" | "move" | "end" | "reset", dx, dy }
+ *
+ * 为什么不再用外壳那条浅紫拖动条：用户嫌"平白多一栏"，标准做法就是拖标题栏。
+ *
+ * 五条硬约束（都是踩出来的）：
+ *   · **只在居中态起拖** —— 边栏贴着右边缘不参与挪动，也不该白白吞掉点击
+ *   · 输入框 / 搜索框这类"拖了有别的含义"的地方不起拖（见 onControl）；
+ *     按钮**可以**起拖 —— 标题栏上按钮密，从按钮上抓才顺手
+ *   · 真拖过之后那一下 click 要吞掉，否则松手会顺手触发标题栏上的按钮
+ *   · 松手 / 取消 / 丢捕获三条路都要收尾，少一条就卡在 grabbing
+ *   · ★ 位移必须用 screenX/screenY —— clientX 会被"自己正在挪 iframe"这件事污染，
+ *     拖一格只走半步（见下面 pointermove 里的推导）
+ */
+function bindTitleDrag(root) {
+  if (!root) return;
+  var st = null;
+  var swallow = false;
+
+  var isModal = function () { return document.body.classList.contains("mode-modal"); };
+  /* 哪些东西上"拖"有别的含义，不能拿来挪窗：
+   *   输入框 / 文本域里拖是选文字，select 是拖选项，链接是拖动链接，.search 里是选搜索词，
+   *   .chip / .chk 是横向滑动手势。
+   * **button 不在排除列表里** —— 标题栏上按钮多，从按钮上起拖照样挪窗，
+   * 而"没移动就松手"的那次 click 会正常触发按钮（只有真拖过才吞掉，见下面的 swallow）。 */
+  var onControl = function (t) {
+    return !!(t && t.closest && t.closest("input,textarea,select,a,.search,.chip,.chk"));
+  };
+
+  root.addEventListener("pointerdown", function (ev) {
+    if (ev.button !== 0 || !isModal() || onControl(ev.target)) return;
+    swallow = false;
+    st = { id: ev.pointerId, x: ev.screenX, y: ev.screenY, dx: 0, dy: 0, moved: false };
+    try { root.setPointerCapture(ev.pointerId); } catch (e) { /* 不支持的浏览器就算了 */ }
+  });
+
+  root.addEventListener("pointermove", function (ev) {
+    if (!st || ev.pointerId !== st.id) return;
+    // ★ 必须用 screenX/screenY，不能用 clientX/clientY。
+    //    clientX 是"相对 iframe 视口"的读数，而我们这一拖**正在把 iframe 本身挪走** ——
+    //    窗挪了 X，同一物理位置读出来的 clientX 就少 X，于是形成负反馈：
+    //      X = 目标位移 - X  →  X = 目标位移 / 2
+    //    表现是"拖一格只走半步"（实测拖 187px 只挪 93.5px，正好一半）。
+    //    screenX 是屏幕坐标，不受 CSS transform 影响，读数就是真实位移。
+    var dx = ev.screenX - st.x;
+    var dy = ev.screenY - st.y;
+    if (!st.moved) {
+      if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;   // 手抖不算拖
+      st.moved = true;
+      document.body.classList.add("dragging");
+      document.body.style.userSelect = "none";
+      sendToParent("windwhisper/modal-drag", { phase: "start" });
+    }
+    st.dx = dx;
+    st.dy = dy;
+    ev.preventDefault();
+    sendToParent("windwhisper/modal-drag", { phase: "move", dx: dx, dy: dy });
+  });
+
+  // 收尾统一走这里。注意用 st.dx/st.dy 而不是现读 ev.screenX —
+  // lostpointercapture / pointerup 这些收尾事件坐标不可靠，现读会把窗瞬移到奇怪的地方。
+  var finish = function () {
+    if (!st) return;
+    var s = st;
+    st = null;
+    document.body.classList.remove("dragging");
+    document.body.style.userSelect = "";
+    if (!s.moved) return;
+    swallow = true;
+    sendToParent("windwhisper/modal-drag", { phase: "end", dx: s.dx, dy: s.dy });
+  };
+  root.addEventListener("pointerup", finish);
+  root.addEventListener("pointercancel", finish);
+  root.addEventListener("lostpointercapture", finish);
+
+  root.addEventListener("click", function (ev) {
+    if (!swallow) return;
+    swallow = false;
+    ev.stopPropagation();
+    ev.preventDefault();
+  }, true);
+
+  // 双击标题栏 = 回屏幕正中（这条原先在外壳的拖动条上，条没了挪到这儿，不影响拖动）
+  root.addEventListener("dblclick", function (ev) {
+    if (!isModal() || onControl(ev.target)) return;
+    sendToParent("windwhisper/modal-drag", { phase: "reset" });
+  });
 }
 
 function setMaster(id) {
@@ -1544,7 +1777,10 @@ function setMaster(id) {
   renderSkills();
   renderSyscap();
   persistChatSettings();
-  toast("已换人设 → 「" + s.name + "」· 对话历史保留，不会被清空", true);
+  /* 这里原来会弹一条 toast（"已换人设 → … · 对话历史保留，不会被清空"）—— 已去掉。
+   * 原因：toast 容器是 fixed 在底部中间（style.css 的 .toasts），正好压在输入框上，
+   * 每换一次人设就挡一次。换人设的反馈也没丢：上面 syscap 那行会立刻变成
+   * 「已启用「xxx」」，芯片也同步高亮，看一眼就知道换没换成。 */
 }
 
 function toggleRef(id) {
@@ -1580,7 +1816,11 @@ function renderSyscap() {
   }
   if (state.refIds.length) bits.push("附加参考 " + state.refIds.length + " 项");
   if (skillMode === "demo") bits.push("skill 列表 = 演示数据");
-  $("syscapTxt").textContent = bits.join(" · ");
+  var line = $("syscapTxt");
+  line.textContent = bits.join(" · ");
+  /* 显存协调的 note 不再弹 toast（太频繁），挂这儿 —— 鼠标停一下能看全文。
+     正常跳过（"正在跑图"）和真异常（"拿不到 / 失败"）都在里面，不丢信息。 */
+  line.title = (m && m.vram && m.vram.note) ? m.vram.note : "";
 }
 
 function renderCats() {
@@ -2547,6 +2787,44 @@ composer.addEventListener("keydown", function (ev) {
   sendMessage();
 });
 
+/* 图片的四个入口，全走 readImageFile → encodeImage 这一条路：
+ *   ① 附件按钮（HTML onclick → attachImage）
+ *   ② 选文件（下面这个 change）
+ *   ③ Ctrl+V 粘贴 —— 平时"复制一张图来反推"最顺手的就是它
+ *   ④ 把图拖进面板
+ * 注意 change 之后必须把 input.value 清空 —— 否则再选**同一张**图不会触发 change。 */
+$("imgFile").addEventListener("change", function () {
+  var f = this.files && this.files[0];
+  this.value = "";
+  readImageFile(f);
+});
+
+document.addEventListener("paste", function (ev) {
+  var items = (ev.clipboardData && ev.clipboardData.items) || [];
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type && items[i].type.indexOf("image/") === 0 && items[i].kind === "file") {
+      readImageFile(items[i].getAsFile());
+      ev.preventDefault();     // 别让浏览器把图当富文本再塞进输入框
+      return;
+    }
+  }
+});
+
+/* 拖进来。dragover 必须 preventDefault，否则浏览器默认行为是"不允许放置"，drop 根本不触发。 */
+["dragover", "drop"].forEach(function (type) {
+  document.addEventListener(type, function (ev) {
+    var dt = ev.dataTransfer;
+    if (!dt || !dt.types || Array.prototype.indexOf.call(dt.types, "Files") < 0) return;
+    ev.preventDefault();
+    if (type !== "drop") return;
+    var files = dt.files || [];
+    for (var i = 0; i < files.length; i++) {
+      if (/^image\//.test(files[i].type || "")) { readImageFile(files[i]); return; }
+    }
+    toast("拖进来的东西里没有图片", true);
+  });
+});
+
 // 主题要先定下来再渲染 —— 否则会先闪一下浅色再跳深色
 initTheme();
 
@@ -2555,6 +2833,10 @@ applyPanelMode("dock");
 
 // 芯片条的横滑（窄边栏里一屏放不下全部 skill）
 bindChipsScroll();
+
+// 拖标题栏挪大窗：主顶栏 + 每个弹层的标题栏（后端设置那个也是用户指定的把手）
+bindTitleDrag(document.querySelector(".topbar"));
+Array.prototype.forEach.call(document.querySelectorAll(".sheet-head"), bindTitleDrag);
 
 // 快速填地址那一排（含你自己加的）
 renderBasePresets();

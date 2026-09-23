@@ -69,8 +69,14 @@
   <div class="msgs" id="msgs"></div>
 </main>
 
+<!-- 图片条：附了图才露面（靠 JS 摘/挂 `hidden`）。
+     ⚠️ 它的 display 是 flex，必须配一条 `.imgstrip[hidden]{display:none}`，
+        否则作者样式会盖掉 hidden 自带的 UA 样式，条子永远藏不住（同 .addpreset 那个坑）。 -->
+<div class="imgstrip" id="imgStrip" hidden></div>
+<input type="file" id="imgFile" accept="image/*" hidden>
+
 <div class="composer">
-  <button class="ibtn" onclick="attachImage()" title="添加图片（本地模型大多不收图，先留着）">
+  <button class="ibtn" onclick="attachImage()" title="加一张图反推提示词（点这里选文件，也可以直接 Ctrl+V 粘贴或把图拖进来）">
     <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
   </button>
   <textarea id="composerInput" placeholder="接着说，或者说个新方向…&#10;Enter 发送 · Shift+Enter 换行 · 拖右下角可调整高度" rows="1"></textarea>

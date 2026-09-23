@@ -107,6 +107,11 @@ var WW = (function () {
       return req("GET", "/chats" + (includeArchived ? "?archived=1" : "")).then(function (d) { return d.chats || []; });
     },
     createChat: function (skillId) { return req("POST", "/chats", { skillId: skillId }).then(function (d) { return d.chat; }); },
+    /* 会话里那张图的地址。会话 json 只存文件名，图是后端按需读出来的 ——
+     * 所以 <img src> 要拼这条路由，不能像以前那样直接把 data URL 塞进去。 */
+    imgUrl: function (chatId, name) {
+      return BASE + "/image?chat=" + encodeURIComponent(chatId || "") + "&name=" + encodeURIComponent(name || "");
+    },
     getChat: function (id) { return req("GET", "/chats/" + encodeURIComponent(id)).then(function (d) { return d.chat; }); },
     saveChat: function (id, patch) { return req("POST", "/chats/" + encodeURIComponent(id), patch).then(function (d) { return d.chat; }); },
     deleteChat: function (id) { return req("DELETE", "/chats/" + encodeURIComponent(id)); },

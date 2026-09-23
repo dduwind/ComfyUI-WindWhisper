@@ -10,7 +10,8 @@ custom_nodes 插件撞车的概率近乎为零（当年 WindMix 就是因为路�
     POST   /windwhisper/config/test           测试连接（本地服务无 Key 也要能通）
     GET    /windwhisper/models                拉模型列表
     GET    /windwhisper/prompt                预览拼好的 system prompt
-    POST   /windwhisper/chat                  发消息（SSE 流式）
+    POST   /windwhisper/chat                  发消息（SSE 流式；带图时走 image / imageRef）
+    GET    /windwhisper/image                 读会话里的图片素材（反推那张图）
     GET    /windwhisper/chats                 会话列表（轻量元数据）
     POST   /windwhisper/chats                 新建会话
     GET    /windwhisper/chats/{cid}           读单个会话
@@ -44,6 +45,7 @@ custom_nodes 插件撞车的概率近乎为零（当年 WindMix 就是因为路�
 import importlib
 import json
 import logging
+import os
 import time
 
 from aiohttp import web
@@ -112,6 +114,41 @@ async def _body(request):
         return data if isinstance(data, dict) else {}
     except Exception:  # noqa: BLE001
         return {}
+
+
+# ---------------------------------------------------------------- 图片（反推）
+#
+# 2026-09-23 加。前端已经把图压过了（最长边 1280 / JPEG），这里的长度上限只是**兜底**：
+# 不设的话一个坏客户端能把 50MB 的 base64 塞进会话文件，从此每次读这条会话都要解析它。
+#
+# ⚠️ 当天晚些时候又改过一处：**图不再存进会话 json**（用户嫌历史膨胀），改由
+# store.slim_msgs 落成 images/<id>/ 下的文件，会话里只留文件名。所以这里校验的是
+# "进来的 data URL 合不合法"（它要原样发给模型），存哪儿是 store 的事。
+_IMG_MAX_CHARS = 3 * 1024 * 1024
+# 只收光栅图的 data URL。**故意不收 image/svg+xml** —— SVG 能装脚本，
+# 虽然现在只当 <img src> 用（不执行），但少一个入口少一份风险，没必要图那个方便。
+_IMG_TYPES = ("data:image/jpeg;base64,", "data:image/png;base64,",
+              "data:image/webp;base64,", "data:image/gif;base64,")
+# 只贴图不打字时的兜底指令 —— 让"纯图反推"一步就能发出去。标题也用它旁边那句。
+DEFAULT_IMAGE_PROMPT = "把这张图反推成一份可直接出图的提示词。"
+PURE_IMAGE_TITLE = "图片反推"
+
+
+def _clean_image(raw):
+    """校验前端传来的图片 data URL：合法就返回原串，否则 None。
+
+    形状必须严格是 `data:image/<光栅类型>;base64,<...>`：外链、file://、相对路径
+    一律不收（那些地址会被原样发给 LLM 服务，等于让服务去替我们请求内网）。
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if len(s) < 64 or len(s) > _IMG_MAX_CHARS:
+        return None
+    for pre in _IMG_TYPES:
+        if s.startswith(pre):
+            return s
+    return None
 
 
 def _register(routes):
@@ -212,6 +249,30 @@ def _register(routes):
 
         body = await _body(request)
         text = str(body.get("text") or "").strip()
+        # 图有两条路进来：
+        #   · image     —— 本轮新贴的（前端压过的 data URL）
+        #   · imageRef  —— 重发上一轮。「关掉思考重来」拿的是历史里那条消息，而会话里
+        #     存的是**素材文件名**，所以把文件读回 data URL 再发。
+        raw_img = body.get("image")
+        image = _clean_image(raw_img) if raw_img else None
+        if raw_img and not image:
+            return web.json_response(
+                {"ok": False, "error": "图片格式不认识 —— 只收 data:image/jpeg|png|webp|gif 的 base64"},
+                status=400,
+            )
+        if not image:
+            ref = body.get("imageRef")
+            rid = body.get("chatId")
+            if isinstance(ref, str) and ref and isinstance(rid, str) and not _bad_id(rid):
+                image = store.image_data_url(rid, ref)
+                if not image:
+                    # 文件没了 / 名字不对 → 退化成"只有文字"照发。
+                    # 为一张图让"重发"整个失败，那是拿小问题换大问题。
+                    logger.warning("[WindWhisper] 找不到这张图，本轮按纯文字发：%s / %s", rid, ref)
+        # 只贴了图、一个字没打：补一句默认指令，纯图反推不用先打字
+        pure_image = bool(image) and not text
+        if pure_image:
+            text = DEFAULT_IMAGE_PROMPT
         if not text:
             return web.json_response({"ok": False, "error": "消息是空的"}, status=400)
 
@@ -232,10 +293,17 @@ def _register(routes):
             chat["refIds"] = body["refIds"]
 
         msgs = chat.get("msgs") or []
-        msgs.append({"role": "user", "text": text, "ts": store.now_ms()})
+        # 图**存进历史**（多轮能一直引用同一张图），但**不是以 base64 形式**：
+        # 这里先挂上 data URL（本轮拼 prompt 直接用它，省一次读盘），落盘时
+        # store.save_chat → slim_msgs 会把它换成 images/<id>/ 下的素材文件名。
+        # 所以会话 json 里看不到任何图片数据，历史怎么聊都不会膨胀。
+        entry = {"role": "user", "text": text, "ts": store.now_ms()}
+        if image:
+            entry["image"] = image
+        msgs.append(entry)
         chat["msgs"] = msgs
         if len(msgs) == 1 or not chat.get("title") or chat.get("title") == "新会话":
-            chat["title"] = store.auto_title(text)
+            chat["title"] = PURE_IMAGE_TITLE if pure_image else store.auto_title(text)
         try:
             store.save_chat(cid, chat)
         except Exception as exc:  # noqa: BLE001
@@ -253,7 +321,13 @@ def _register(routes):
         system_text, pmeta = prompt_mod.build_system_prompt(
             cfg, chat.get("skillId"), chat.get("refIds"), skills_mod=skills_mod
         )
-        messages = prompt_mod.build_messages(cfg, system_text, msgs)
+        # ⚠️ msgs 是"刚从磁盘读出来的老条目 + 本轮新加的"混合体：老条目上的 image 是
+        # **素材文件名**，本轮那条还是 data URL。按需读文件这件事交给 prompt 层回调完成 ——
+        # 它只为"真进了预算"的那几张读盘，不会为了裁预算先把所有图都读一遍。
+        messages = prompt_mod.build_messages(
+            cfg, system_text, msgs,
+            image_loader=(lambda name: store.image_data_url(cid, name)),
+        )
 
         # 4) 流式转发
         resp = web.StreamResponse(
@@ -353,6 +427,29 @@ def _register(routes):
         except Exception:  # noqa: BLE001
             pass
         return resp
+
+    # ------------------------------------------------------- 图片素材（读取）
+    #
+    # 会话 json 里只存素材名（images/<会话id>/img_<内容哈希>.jpg），图本身在这儿
+    # 按需读出来给面板的 <img> 显示。**名字是内容哈希 → 同一个文件名永远是同一份字节**，
+    # 所以可以放心让它长缓存（immutable），切会话不会反复传图。
+
+    @routes.get("/windwhisper/image")
+    async def windwhisper_image(request):
+        if _need("store"):
+            return web.json_response(_MISSING, status=500)
+        cid = request.query.get("chat") or ""
+        name = request.query.get("name") or ""
+        # 两道白名单都要过：cid 防目录穿越，name 再防一次（它会被拼进路径）
+        if _bad_id(cid) or not store.safe_image_name(name):
+            return web.json_response({"ok": False, "error": "参数不对"}, status=400)
+        p = store.image_path(cid, name)
+        if not os.path.isfile(p):
+            return web.json_response({"ok": False, "error": "这张图不在了"}, status=404)
+        # Content-Type 由 web.FileResponse 按扩展名给（.jpg → image/jpeg）
+        return web.FileResponse(
+            p, headers={"Cache-Control": "public, max-age=31536000, immutable"}
+        )
 
     # -------------------------------------------------------------- 会话
 

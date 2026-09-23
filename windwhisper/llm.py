@@ -178,6 +178,20 @@ def _extract_plain(data):
     return msg.get("content") or ch.get("text") or ""
 
 
+def _has_image(messages):
+    """这条请求里有没有图（多模态 content 数组）。用来把 400 翻译成人话。"""
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        c = m.get("content")
+        if not isinstance(c, list):
+            continue
+        for part in c:
+            if isinstance(part, dict) and part.get("type") == "image_url":
+                return True
+    return False
+
+
 def build_payload(cfg, messages):
     """构造 /chat/completions 的请求体。
 
@@ -294,6 +308,7 @@ async def stream_chat(cfg, messages):
     base = normalize_base(cfg.get("base_url"))
     url = base + "/chat/completions"
     payload = build_payload(cfg, messages)
+    has_image = _has_image(messages)
     if not payload["model"]:
         yield {
             "type": "error",
@@ -313,10 +328,17 @@ async def stream_chat(cfg, messages):
     try:
         async for ev in _run_once(cfg, url, payload, timeout):
             if ev.get("type") == "_http_error":
+                hint = _hint_for_status(ev["status"], ev["body"], base)
+                # 带图的请求被 400 拒掉，八成不是"请求不合法"而是**这个模型根本不看图**。
+                # 不挑明的话用户只会看到一句 400，然后把责任算到插件头上。
+                if has_image and ev["status"] in (400, 404, 422):
+                    hint += ("<br>⚠️ 这一条带了图：如果服务说的是「不支持图片 / 不是多模态」之类，"
+                             "那就是当前模型看不了图 —— 换成 VL 模型再发"
+                             "（llama.cpp 还要另配 <code>--mmproj</code> 才支持）。")
                 yield {
                     "type": "error",
                     "error": "HTTP %d" % ev["status"],
-                    "hint": _hint_for_status(ev["status"], ev["body"], base),
+                    "hint": hint,
                 }
                 return
             yield ev

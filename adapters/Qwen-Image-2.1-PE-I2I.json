@@ -1,5 +1,5 @@
 {
-  "name": "Qwen · 图像编辑提示词",
+  "name": "Qwen-i2i · 图像编辑提示词",
   "category": "通用",
   "icon": "brush",
   "inject": [

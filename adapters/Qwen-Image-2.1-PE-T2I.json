@@ -1,5 +1,5 @@
 {
-  "name": "Qwen · 文生图提示词",
+  "name": "Qwen-t2i · 文生图提示词",
   "category": "通用",
   "icon": "tag",
   "inject": [

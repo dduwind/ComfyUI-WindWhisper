@@ -5,7 +5,7 @@
  *   1. 画布上挂一个**可拖动的悬浮按钮**（位置记住）：单击开关面板、双击切换形态
  *   2. 面板有**两种形态**，共用同一套 DOM，只切 class：
  *        ① 右侧停靠边栏（默认，左边缘可拖宽）
- *        ② 居中大窗（右下角可拖大小，带一层淡遮罩，点遮罩收起）
+ *        ② 居中大窗（右下角可拖大小、顶部拖动条可挪位置 + 双击回正中，带一层淡遮罩，点遮罩收起）
  *      两种形态各自记住自己的尺寸，顶栏那个放大按钮和双击都能切
  *   3. 提供入口打开面板（顶栏菜单 + 节点上的按钮）
  *   4. 处理面板发来的 postMessage —— 核心是「推到节点」
@@ -34,6 +34,10 @@ const W_MAX = 1040;
 /* 形态：dock = 右侧停靠边栏（默认），modal = 居中大窗。两种形态各记各的尺寸。 */
 const MODE_KEY = "windwhisper_panel_mode_v1";
 const M_KEY = "windwhisper_panel_modal_v1";
+/* 居中大窗的**位置偏移**（相对屏幕正中，单位 px）。存偏移而不是存绝对坐标 ——
+ * 换个窗口大小再打开，相对正中的偏移仍然成立，绝对坐标会跑到屏幕外。
+ * 拖面板标题栏改的就是它（协议见 onPanelDrag），双击回正 = 归零。 */
+const MP_KEY = "windwhisper_panel_modal_pos_v1";
 const M_DEFAULT = { w: 980, h: 780 };
 const M_MIN = { w: 460, h: 380 };
 const M_MAX_W = 1400;
@@ -81,13 +85,26 @@ function injectStyle() {
   position:relative;border-radius:12px;overflow:hidden;pointer-events:auto;
   border:1px solid rgba(128,118,190,.28);
   box-shadow:0 26px 70px -22px rgba(0,0,0,.62),0 2px 10px rgba(0,0,0,.26);
+  /* 纵向排版：iframe 撑满整个壳（原来上面还有一条拖动条，2026-09-23 去掉了） */
+  display:flex;flex-direction:column;
 }
 #${OVERLAY_ID}.ww-dock .ww-frame-wrap{height:100%;width:${W_DEFAULT}px;max-width:calc(100vw - 20px)}
 #${OVERLAY_ID}.ww-modal .ww-frame-wrap{
   width:${M_DEFAULT.w}px;height:${M_DEFAULT.h}px;
   max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);
 }
-#${OVERLAY_ID} iframe{width:100%;height:100%;border:0;display:block;background:#fff}
+/* 居中态挪窗：把手改成**面板自己的标题栏**（2026-09-23 改）。
+   原来在外壳这层加了一条浅紫拖动条，用户嫌"平白多一栏"。
+   但面板在自己 iframe 里，外壳收不到它的指针事件 —— 所以改由面板 postMessage
+   把位移报出来，外壳只负责夹取 + 记忆 + 落 transform（协议见 onPanelDrag）。
+   ⚠️ 拖动期间**不要**给 iframe 加 pointer-events:none。drag 是从 iframe 里发起的，
+   关掉它的指针事件等于把拖动本身掐断（老拖动条长在外壳上，才敢那么写）。 */
+/* 拖动大窗时把遮罩压到几乎没有 —— 用户挪窗就是为了看底下的节点，
+   这会儿还糊着一层就没意义了；松手再恢复。 */
+#${OVERLAY_ID}.ww-moving .ww-mask{background:rgba(14,12,28,.06)}
+/* ⚠️ iframe 不能写 height:100% —— 外壳是纵向 flex，100% 算的是**整个**壳高，
+   会被 overflow:hidden 切掉一截。用 flex:1 1 0 精确吃掉"剩下的高度"，两种形态都对。 */
+#${OVERLAY_ID} iframe{width:100%;flex:1 1 0;min-height:0;border:0;display:block;background:#fff}
 
 /* 边栏态：左边缘的拖宽把手 —— 平时隐形，鼠标移上去才露出一条细杠 */
 #${OVERLAY_ID} .ww-resize{position:absolute;left:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:5;display:none}
@@ -172,6 +189,43 @@ function modalSize() {
 function saveModalSize(w, h) { writeJSON(M_KEY, { w: Math.round(w), h: Math.round(h) }); }
 
 /**
+ * 居中大窗允许的最大偏移。窗口是 `justify-content:center` 摆的，
+ * 所以偏移 o 时左边距 = (视口宽 - 窗宽)/2 + o；要保证左右各留 8px 边距，
+ * 上下限就是对称的 `(视口 - 窗尺寸)/2 - 8`。
+ * 窗比视口还大时直接给 0（不给负值，否则会算出"必须反着挪"的怪结果）。
+ */
+function modalPosBounds() {
+  const w = frameWrap ? frameWrap.offsetWidth : M_DEFAULT.w;
+  const h = frameWrap ? frameWrap.offsetHeight : M_DEFAULT.h;
+  return {
+    x: Math.max(0, (window.innerWidth - w) / 2 - 8),
+    y: Math.max(0, (window.innerHeight - h) / 2 - 8),
+  };
+}
+
+function clampModalPos(ox, oy) {
+  const b = modalPosBounds();
+  return { x: clampNum(ox, -b.x, b.x), y: clampNum(oy, -b.y, b.y) };
+}
+
+/** 记住的位置偏移：读出来是个数就用，否则归零（居中）。 */
+function modalPos() {
+  const p = readJSON(MP_KEY);
+  if (!p || !isFinite(p.x) || !isFinite(p.y)) return { x: 0, y: 0 };
+  return clampModalPos(+p.x, +p.y);
+}
+
+function saveModalPos(x, y) { writeJSON(MP_KEY, { x: Math.round(x), y: Math.round(y) }); }
+
+/** 把大窗当前的位置偏移写进 transform（dock 态要清掉，不然切过去还偏着）。 */
+function applyModalPos() {
+  if (!frameWrap) return;
+  if (mode !== "modal") { frameWrap.style.transform = ""; return; }
+  const p = modalPos();
+  frameWrap.style.transform = "translate(" + p.x + "px," + p.y + "px)";
+}
+
+/**
  * 落形态：切 class → 按形态设尺寸 → 通知面板 → 让悬浮按钮重新避让。
  *
  * 尺寸写在内联样式上，所以切过去时必须把对侧那条**清掉**（边栏只认 width、
@@ -185,6 +239,11 @@ function applyMode(next) {
   overlay.classList.toggle("ww-dock", mode === "dock");
   overlay.classList.toggle("ww-modal", mode === "modal");
 
+  // 万一上一次拖动没收尾（面板中途刷新 / 消息丢了），这把脏状态得清掉，
+  // 否则 .ww-moving 会一直挂着，遮罩永远是透的
+  dragFrom = null;
+  overlay.classList.remove("ww-moving");
+
   if (mode === "dock") {
     frameWrap.style.height = "";
     frameWrap.style.width = panelWidth() + "px";
@@ -193,6 +252,8 @@ function applyMode(next) {
     frameWrap.style.width = s.w + "px";
     frameWrap.style.height = s.h + "px";
   }
+  // 位置必须在尺寸之后算 —— 允许的偏移范围是从窗口尺寸推出来的
+  applyModalPos();
 
   postToPanel("windwhisper/mode", { mode: mode });
   layoutFab();
@@ -352,6 +413,7 @@ function ensureOverlay() {
     '<div class="ww-mask" title="点一下收起面板"></div>'
     + '<div class="ww-frame-wrap">'
     + '<div class="ww-resize" title="左右拖动调整边栏宽度"></div>'
+    // 这里**故意没有**拖动条：居中态的把手是面板自己的标题栏（见 onPanelDrag）。
     + '<iframe id="windwhisper-frame" src="' + PANEL_URL + '"></iframe>'
     + '<div class="ww-resize-se" title="拖动调整大窗大小"></div>'
     + '</div>';
@@ -433,6 +495,59 @@ function onResizeModal(ev) {
       const r2 = frameWrap.getBoundingClientRect();
       saveModalSize(r2.width, r2.height);
     });
+}
+
+/**
+ * 居中大窗挪位置（用户要"挪开窗户看下面的节点"）。
+ *
+ * 把手在**面板自己的标题栏**里，不由这里监听指针 —— 面板在自己的 iframe 里，
+ * 外壳拿不到它的 pointermove，所以由面板上报"这一拖走了多少像素"：
+ *   phase: "start"（按住）· "move"（拖动中）· "end"（松手）· "reset"（双击回正中）
+ * 上报端在 web/panel/app.js 的 bindTitleDrag()。
+ *
+ * 三个要点：
+ *   · 存的是**相对屏幕正中的偏移**，不是绝对坐标（见 MP_KEY 注释）
+ *   · 拖动期间给 overlay 加 `.ww-moving` —— 遮罩压到几乎没有，不然挪了也看不清节点
+ *   · 位移一律过一遍 clampModalPos，窗不会被拖出视口
+ */
+let dragFrom = null;
+
+function onPanelDrag(msg) {
+  // 边栏是贴着右边缘的，不参与挪动；此时连状态都不该留下
+  if (mode !== "modal" || !frameWrap) return;
+
+  if (msg.phase === "reset") {
+    dragFrom = null;
+    overlay.classList.remove("ww-moving");
+    saveModalPos(0, 0);
+    applyModalPos();
+    return;
+  }
+
+  if (msg.phase === "start") {
+    const p = modalPos();
+    dragFrom = { x: p.x, y: p.y };
+    overlay.classList.add("ww-moving");
+    return;
+  }
+
+  const dx = +msg.dx || 0;
+  const dy = +msg.dy || 0;
+
+  if (msg.phase === "move") {
+    if (!dragFrom) return;
+    const p = clampModalPos(dragFrom.x + dx, dragFrom.y + dy);
+    frameWrap.style.transform = "translate(" + p.x + "px," + p.y + "px)";
+    return;
+  }
+
+  // end —— 松手才落盘
+  if (!dragFrom) return;
+  const p = clampModalPos(dragFrom.x + dx, dragFrom.y + dy);
+  dragFrom = null;
+  overlay.classList.remove("ww-moving");
+  saveModalPos(p.x, p.y);
+  applyModalPos();   // 走一遍"读记忆值 → 夹取"，免得手一抖存进越界的值
 }
 
 function openPanel(targetMode) {
@@ -676,6 +791,9 @@ window.addEventListener("message", (ev) => {
     if (msg.mode === "dock" || msg.mode === "modal") {
       if (panelOpen) applyMode(msg.mode); else openPanel(msg.mode);
     }
+  } else if (msg.type === "windwhisper/modal-drag") {
+    // 面板里拖标题栏 → 挪整个大窗。位移是面板算的，夹取和记忆在这边
+    onPanelDrag(msg);
   }
 });
 
@@ -700,6 +818,7 @@ window.addEventListener("resize", () => {
     frameWrap.style.width = s.w + "px";
     frameWrap.style.height = s.h + "px";
   }
+  applyModalPos();   // 视口变了，原来那个偏移可能已经越界 → 重新夹一遍
   layoutFab();
 });
 

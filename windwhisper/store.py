@@ -5,7 +5,8 @@
 
     user/default/WindWhisper/
     ├── config.json       后端配置（地址 / Key / 模型 / 参数 / 显存策略）
-    ├── chats/<id>.json   会话（消息历史 + 人设 + 参考）
+    ├── chats/<id>.json   会话（消息历史 + 人设 + 参考）—— **纯文字，不含图片数据**
+    ├── images/<id>/      这个会话贴过的图（反推用）。会话里只存文件名
     ├── library.json      提示词库（阶段 4）
     └── skills/<id>/      你自己的 skill（优先于插件内置的）
 
@@ -14,10 +15,13 @@
 而且你的会话就永久丢了。
 """
 
+import base64
+import hashlib
 import json
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -163,6 +167,168 @@ def write_json(path, data):
 
 def now_ms():
     return int(time.time() * 1000)
+
+
+# ------------------------------------------------------------------ 图片素材
+#
+# 2026-09-23 改（用户反馈"反推的图存进历史，多来几次历史不得爆炸"）。
+#
+# 以前反推那张图是**按 base64 原样塞在会话 json 里**的。前端已经压到最长边 1280 的
+# JPEG（~160KB），base64 之后还要再涨 1/3 —— 一条消息就是 215KB 的纯文本，聊十轮
+# 会话文件 2MB 起步，而且**每次切会话、每次拼 prompt 都要把这个字符串整个解析一遍**。
+#
+# 现在图落地成文件，会话 json 里只留一个文件名（二十来个字符）：
+#
+#     chats/<id>.json   {"role":"user","text":"反推","image":"img_9f2c…a41.jpg"}
+#     images/<id>/img_9f2c…a41.jpg      ← 真正的字节
+#
+# 于是：① 会话 json 回到"纯文字"大小，聊多久都不膨胀；
+#      ② 面板照样能显示那张图（走 GET /windwhisper/image 读文件）；
+#      ③ 多轮还能引用同一张图（**只在拼 prompt 那一刻**才把文件读回 data URL）。
+#
+# 文件名用**内容的 sha1**，所以同一张图重复保存只会有一份文件，"落盘两次变两份"
+# 这种坑从根上没有了。
+
+# 素材文件名白名单。这个值会被拼进路径，`..` / 绝对路径 / 目录分隔符进来就是任意文件读，
+# 所以 **必须** 卡死（跟 safe_id 一个道理：aiohttp 会把 %2e%2e 解码成 ..）。
+_IMG_NAME_RE = re.compile(r"^img_[0-9a-f]{16}\.(jpg|jpeg|png|webp|gif)$")
+# data URL 的 mime ↔ 扩展名。两个方向都要：写盘按 mime 定扩展名，读回来按扩展名定 mime。
+_IMG_EXT = {"image/jpeg": ".jpg", "image/png": ".png",
+            "image/webp": ".webp", "image/gif": ".gif"}
+_IMG_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+             ".webp": "image/webp", ".gif": "image/gif"}
+
+
+def images_dir(cid, create=True):
+    """某个会话的图片目录。跟 chats/ 平级而不是塞进去 —— chats/ 下的东西按 *.json 遍历，
+    混进去一个目录以后容易踩到"以为它是会话文件"的坑。"""
+    d = os.path.join(user_root(), "images", cid)
+    if create:
+        os.makedirs(d, exist_ok=True)
+    return d
+
+
+def image_path(cid, name):
+    return os.path.join(images_dir(cid), name)
+
+
+def safe_image_name(name):
+    """素材文件名白名单。跟 safe_id 同一套思路：正则 + 单独拦 `..` 和目录分隔符。"""
+    if not name or not isinstance(name, str):
+        return False
+    if ".." in name or "/" in name or "\\" in name:
+        return False
+    return bool(_IMG_NAME_RE.match(name))
+
+
+def parse_data_url(raw):
+    """`data:image/jpeg;base64,<...>` → (扩展名, 原始字节)；认不出来返回 None。
+
+    **只认 base64 的光栅图**，跟 routes._clean_image 的白名单一致。不认的返回 None，
+    由调用方决定是报错还是当作没图。
+    """
+    if not isinstance(raw, str) or not raw.startswith("data:"):
+        return None
+    head, _, b64 = raw.partition(",")
+    if not b64 or ";base64" not in head:
+        return None
+    mime = head[5:].split(";")[0].strip().lower()
+    ext = _IMG_EXT.get(mime)
+    if not ext:
+        return None
+    try:
+        data = base64.b64decode(b64)
+    except Exception:  # noqa: BLE001
+        return None
+    if not data:
+        return None
+    return ext, data
+
+
+def save_image(cid, data_url):
+    """把 data URL 落成文件，返回**文件名**；输入不合法或写盘失败返回 None。
+
+    写失败**不抛异常**（返回 None 即可）—— 图存不下顶多是历史里少一张缩略图，
+    为这个把整条消息发不出去，那是拿小问题换大问题。
+    """
+    if not safe_id(cid):
+        return None
+    parsed = parse_data_url(data_url)
+    if not parsed:
+        return None
+    ext, data = parsed
+    # 内容哈希当名字：同一张图重复保存是幂等的，不会堆出多份
+    name = "img_%s%s" % (hashlib.sha1(data).hexdigest()[:16], ext)
+    path = image_path(cid, name)
+    if os.path.isfile(path):          # 已经存过一模一样的，直接用
+        return name
+    try:
+        with _LOCK:
+            with open(path, "wb") as f:
+                f.write(data)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
+    except OSError as exc:
+        logger.warning("[WindWhisper] 图片写不进 %s：%s", path, exc)
+        return None
+    return name
+
+
+def image_data_url(cid, name):
+    """素材名 → data URL（拼 prompt 用）。读不到返回 None。
+
+    **不抛异常**是刻意的：会话里可能留着一张已经被删掉的图，抛出去整轮对话就发不出去了，
+    降级成"这一轮看不到图"才是对的。
+    """
+    if not safe_id(cid) or not safe_image_name(name):
+        return None
+    try:
+        with open(image_path(cid, name), "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    if not data:
+        return None
+    mime = _IMG_MIME.get(os.path.splitext(name)[1].lower(), "image/jpeg")
+    return "data:%s;base64,%s" % (mime, base64.b64encode(data).decode("ascii"))
+
+
+def slim_msgs(cid, msgs):
+    """把消息里内嵌的 data URL 换成素材文件名，返回**新列表**（不动调用方那份）。
+
+    这是整个插件唯一的"图片入口"：`save_chat` 一定会走它，所以哪怕前端哪天又把
+    data URL 传回来（比如"重发上一条"时它内存里还是原串），落盘的也只会是文件名。
+    单点收口，就不用挨个改调用方、也不会漏。
+    """
+    out = []
+    for m in msgs or []:
+        if not isinstance(m, dict):
+            continue
+        ref = m.get("image")
+        if isinstance(ref, str) and ref.startswith("data:"):
+            name = save_image(cid, ref)
+            m = dict(m)
+            if name:
+                m["image"] = name
+            else:
+                # 存不下宁可丢掉这张图 —— 让 base64 回落到会话 json 里才是真的灾难
+                m.pop("image", None)
+        out.append(m)
+    return out
+
+
+def delete_images(cid):
+    """删会话时连图一起删。删不掉也不报错 —— 别为了几张图把"删会话"变成失败。"""
+    if not safe_id(cid):
+        return False
+    d = images_dir(cid, create=False)
+    if not os.path.isdir(d):
+        return False
+    shutil.rmtree(d, ignore_errors=True)
+    return True
 
 
 # ------------------------------------------------------------------ 后端配置
@@ -371,6 +537,10 @@ def save_chat(cid, chat):
     msgs = chat.get("msgs")
     if not isinstance(msgs, list):
         chat["msgs"] = []
+    else:
+        # ⚠️ 必经之路：内嵌的 base64 在这一步被换成素材文件名（见 slim_msgs）。
+        # 少了这一句，任何一处调用方把原始 data URL 传回来就会写进会话 json。
+        chat["msgs"] = slim_msgs(cid, msgs)
     write_json(chat_path(cid), chat)
     return chat
 
@@ -383,10 +553,12 @@ def delete_chat(cid):
         return False
     try:
         os.remove(p)
-        return True
     except OSError as exc:
         logger.warning("[WindWhisper] 删会话失败 %s: %s", cid, exc)
         return False
+    # 会话没了，它名下的图就是永远扫不到的垃圾，一起清掉
+    delete_images(cid)
+    return True
 
 
 def auto_title(text):

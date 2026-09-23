@@ -1,5 +1,5 @@
 {
-  "name": "万能提示词生成",
+  "name": "万能提示词",
   "category": "通用",
   "icon": "tag",
   "inject": ["SKILL.md"],
