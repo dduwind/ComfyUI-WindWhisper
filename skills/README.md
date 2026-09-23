@@ -4,34 +4,46 @@
 每个子目录是一个 skill，入口必须是 `SKILL.md`。
 
 > ⚠️ 早期版本这里写的是「本目录故意是空的，skill 请放用户目录」。那段话**已经作废** ——
-> 后来的决定是收录一批通用提示词 skill 随插件分发（多数带第三方版权，各自的
-> `README.md` 里都写明了来源和许可情况），用户自己的 skill 仍然放用户目录。
+> 后来的决定是收录一批通用提示词 skill 随插件分发（多数带第三方版权 —— 来源与许可情况
+> **统一写在下面的《来源声明》里**），用户自己的 skill 仍然放用户目录。
 
 ## 来源声明
 
-**本目录收录的 skill 绝大多数来源于网络收集整理**，不是本项目的原创作品，**版权归各自原作者所有**。
-（`character-design-prompt` 是唯一例外，见本节末尾的说明。）
-本项目只是把它们收集到一起、补上让它们在 WindWhisper 里跑得起来的适配（`adapters/`），
-方便克隆插件的人开箱就有几套能用的提示词 skill。收录用于学习与个人创作，
-**不涉及任何商业用途，也不代表原作者为本项目背书**。
+**除 `character-design-prompt` 是本项目自研之外，本目录收录的 skill 均来源于网络收集整理** ——
+不是本项目的原创作品，**版权归各自原作者所有**。本项目只是把它们收集到一起、补上让它们
+在 WindWhisper 里跑得起来的适配（`adapters/`），方便克隆插件的人开箱就有几套能用的 skill。
 
-多数 skill 目录里有一份来源说明：
+收录用于**学习与个人创作**，不涉及任何商业用途，也不代表原作者为本项目背书，**不对内容的
+准确性、适用性作任何担保**，使用产生的后果由使用者承担。商业使用请自行联系原作者确认授权。
 
-| 文件 | 什么时候有 |
+**如果你是某个 skill 的作者，不希望它被收录** —— 提个 Issue 说一声即可，不需要给任何理由，
+我们看到就删。
+
+### 各 skill 的来源
+
+| skill | 来源 |
 | --- | --- |
-| `SOURCE.md` | 统一声明：网络收集、版权归原作者、可申请移除 |
-| `README.md` / `NOTICE.md` / `LICENSE` | 来源更明确的 skill 单列一份（官方仓库、作者署名、许可条款） |
+| `character-design-prompt` | **本项目自研**（v0.1 起于一份 `characterdesignpromptSKILL.pdf`，v0.2–0.4 逐条改定） |
+| `MOKEAIGC-V9` | 网络收集，收集自公开渠道。本副本可能带过本地调整，与原始发布版本不一定逐字一致 |
+| `anima-prompt-artist` | 网络收集 —— Anima 模型的插画向规则与艺术家风格库 |
+| `prompt-generator` | 网络收集，是**多份上游 skill 的汇编**：`references/upstream-skills/` 下是各上游副本（prompt-master、prompt-extractor、art-master、design-master、product-master、video-master、universal-learner 等），**版权各归其原作者**，本声明同样适用于它们 |
+| `roger-deakins-cinematography` | 网络收集 —— 基于电影摄影师 Roger Deakins 公开作品与访谈资料的整理提炼。**影片画面、剧照等影像版权归各影片权利方** |
+| `seedance-tvc-director` | 网络收集，来源指向 GitHub 上的 `nutllwhy/seedance-tvc-director` |
+| `female-portrait-director` | 来源明确，**按上游 MIT 条款合法收录**（作者李岳）—— 见下方说明 |
+| `h3-prompt-writing` | **MiniMax 官方**，原样取自 `MiniMax-AI/MiniMax-H3` |
+| `Qwen-Image-2.1-PE-T2I`、`Qwen-Image-2.1-PE-I2I` | **Qwen（阿里）官方**，取自 Image Prompt Enhancer 的文生图 / 图像编辑 system prompt |
 
-**如果你是某个 skill 的作者，不希望它被收录** —— 提个 Issue 说一声即可，
-不需要给任何理由，我们看到就删。
+### 只有这三个 skill 另带声明文件
 
-> 除 `character-design-prompt` 之外，本目录其余 9 个 skill 都属网络收集 —— 标了「第三方」的
-> 那些，只是表示**另有**一份独立的版权说明文件（`README.md` / `NOTICE.md`），并不代表其余
-> 几个是原创。
->
-> ⚠️ `character-design-prompt` 是个例外：它是本项目自己迭代出来的（v0.1 起于一份
-> `characterdesignpromptSKILL.pdf`，v0.2–0.4 逐条改定），**来源尚未最终确认，暂未附声明文件**。
-> 确认来源之后会补上。
+**不是每个 skill 都摊一份声明** —— 只有下面这几处，且都是**上游原文或收录依据，不是本项目
+加的模板**，**优先于本节适用**：
+
+| 位置 | 是什么 | 为什么不能删 |
+| --- | --- | --- |
+| `female-portrait-director/` 的 `LICENSE`、`NOTICE.md`、`DISCLAIMER.md` | 上游自带：MIT 许可（© 2026 李岳）、作者署名与版本（V1.4）、使用边界 | **MIT 条款要求随副本保留**。署名建议：`Based on "女性人像提示词导演 Skill" by 李岳` |
+| `h3-prompt-writing/`、`Qwen-Image-2.1-PE-T2I/`、`Qwen-Image-2.1-PE-I2I/` 的 `README.md` | 收录依据：写明哪些文件是上游原文、哪些是本项目加的外壳 | 这两家**上游仓库都没附 LICENSE**，所以这些内容**不适用本项目的 MIT 协议**，README 是它能在仓库里存在的凭据 |
+
+> 其余 skill 目录里**只有 `SKILL.md` 和适配需要的内容**，没有额外声明文件 —— 声明就上面这一份。
 
 ## 目录里有什么
 
@@ -39,7 +51,7 @@
 | --- | --- | --- |
 | `MOKEAIGC-V9` | 风格 | 电影感世界观构建 |
 | `anima-prompt-artist` | 插画 | Anima 模型的插画提示词（含 30+ 艺术家风格库） |
-| `character-design-prompt` | 插画 | 角色设定图提示词（单角色全身 · 白底留白 + 背后场景切片）· 来源待确认 |
+| `character-design-prompt` | 插画 | 角色设定图提示词（单角色全身 · 白底留白 + 背后场景切片）· **自研** |
 | `female-portrait-director` | 人像 | 女性人像导演（按需加载架构，只注入最小可跑的三件） |
 | `h3-prompt-writing` | 视频 | MiniMax H3 视频提示词 · **第三方**，见目录内 `README.md` |
 | `prompt-generator` | 通用 | 万能提示词生成 |
