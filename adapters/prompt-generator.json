@@ -3,13 +3,7 @@
   "category": "通用",
   "icon": "tag",
   "inject": ["SKILL.md"],
-  "strip_sections": ["运行须知"],
-  "strip_lines": [
-    "No module named",
-    "PYTHONIOENCODING",
-    "requirements.txt",
-    "compose_prompt",
-    "venv 解释器"
-  ],
-  "_note": "这个 skill 原生靠 Python 脚本（gen_prompt.py + 1246 元素库）跑，而 WindWhisper 只把文本塞进 system prompt，没有命令执行能力。\n\n两级剥离：\n1. strip_sections 删掉整个「运行须知」节（venv 路径 / pip install / 编码环境变量，全是操作说明）。\n2. strip_lines 细到行——「错误处理」那张表里混着两类东西：「Python 依赖缺失 → 用 venv」是操作说明该删，「东亚人+蓝眼睛 → 自动修正为棕眼」是语义规则必须留，整节剥会误伤，所以只删含关键词的那几行。\n\n保留部分：领域路由决策树、六种模式的语义规则、常识推理规则、输出示例、触发词、质量标准——不依赖脚本也能用。脚本和元素库留在目录里不动，WorkBuddy 那边照旧。"
+  "strip_sections": [],
+  "strip_lines": [],
+  "_note": "这个 skill 原生是一套 Python 工具链（gen_prompt.py + intelligent_generator.py + 1246 元素的 SQLite 库），必须让 AI 执行命令才跑得动。而 WindWhisper 只把文本塞进 system prompt，没有命令执行能力。\n\n处理方式：**正文已重写为纯方法论版** —— 保留领域路由决策树、六种模式的语义规则与维度清单、一致性检查、常识推理、英文范例；删掉全部 python 代码块与「查库 → 选元素 → 写库」的操作步骤，并在开头明确告知模型不要声称在查库、不要编造执行结果。\n\n文件层也一并瘦身：脚本、数据库、上游归档已从仓库删除，只留知识类 .md。所以现在不再需要 strip 规则（原规则剥的「运行须知」节已经不存在了）。\n\n⚠️ 若哪天重新导入了用户目录的完整版，需要重新配 strip_sections: ['运行须知'] 与 strip_lines（No module named / PYTHONIOENCODING / requirements.txt / compose_prompt / venv 解释器）。"
 }

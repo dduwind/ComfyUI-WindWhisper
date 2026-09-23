@@ -194,7 +194,10 @@ DEFAULT_CONFIG = {
     "timeout": 300,
     # 附加在环境说明之后的额外要求（你自己写的）
     "system_extra": "",
-    # 输出契约开关：要求模型用 ```prompt 代码块包住最终提示词（面板靠它识别卡片）
+    # 格式契约开关：要求模型用 ```prompt / ```negative 围栏输出，并声明"格式主权"
+    # （压过第三方 skill 自带的 output-format）。面板靠它把回复切成卡片。
+    # ⚠️ 这一节**拼在 system prompt 的最后一位**，不是可有可无 —— 位置错了，
+    #    18KB 的人设 skill 会把它覆盖掉，卡片和按钮一起消失（真机踩过）。
     "card_contract": True,
 }
 

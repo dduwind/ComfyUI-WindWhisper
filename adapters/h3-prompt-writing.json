@@ -1,0 +1,13 @@
+{
+  "name": "H3 · 视频提示词",
+  "category": "视频",
+  "icon": "play",
+  "inject": [
+    "SKILL.md",
+    "references/base-en.txt",
+    "references/ref-en.txt",
+    "WW-OUTPUT.md"
+  ],
+  "strip_sections": [],
+  "_note": "取自 MiniMax 官方仓库，三个上游文件一字未改（版权与来源见目录内 README.md）。\n\n⚠️ 上游的 SKILL.md 只是一层**导航**：它让模型自己去读 references/ 下那两份规范。而 WindWhisper 没有「让模型读文件」的能力 —— 不显式注入的话，模型手里只有 1.9 KB 的导航，真正的格式规范一个字节都进不来，出来的东西会「看着很专业但格式全不对」。\n\n所以这里把两份都注入了，合计约 39 KB（≈ 11K token）：base-en.txt 覆盖 T2VA / I2VA / FL2VA / L2VA 基础模式，ref-en.txt 覆盖 Ref2VA 全参考模式。想省体积就在面板里把 inject 改成只留你要用的那份（不建议全删）。\n\nWW-OUTPUT.md 是本项目加的外壳（上游没有这个文件），排在**最后**注入 —— 位置越靠后模型越容易服从，靠它把输出约束进 prompt 围栏。删掉它，卡片和「复制 / 存库 / 推到节点」三个按钮就不会出现。"
+}

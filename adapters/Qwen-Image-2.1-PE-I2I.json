@@ -1,0 +1,12 @@
+{
+  "name": "Qwen · 图像编辑提示词",
+  "category": "通用",
+  "icon": "brush",
+  "inject": [
+    "SKILL.md",
+    "references/i2i-guide.txt",
+    "WW-OUTPUT.md"
+  ],
+  "strip_sections": [],
+  "_note": "Qwen 官方 Image Prompt Enhancer 的图像编辑 system prompt，上游文件一字未改（版权与来源见目录内 README.md）。\n\n⚠️ 两个坑，都靠末尾的 WW-OUTPUT.md 兜住：\n① 上游要求返回 **JSON**（rewritten_prompt + wh_ratio + ratio_follow）—— WindWhisper 不解析 JSON，照原格式输出的话卡片和「复制 / 存库 / 推到节点」三个按钮**一个都不会出现**。\n② 上游整套规则建立在「**总会有一张输入图**」之上（An input image is ALWAYS present），而 WindWhisper 是纯文本的、**没有图像输入** —— WW-OUTPUT.md 第一节专门讲这种情况怎么办：把用户文字里的图像描述当事实、不编造没提到的细节、多图引用只在用户明确提到多图时用。\n\n所以删掉这个文件会出两种毛病：按钮消失，以及模型开始编造一张它根本看不见的图。\n\n跟 Qwen-Image-2.1-PE-T2I 是姊妹 skill：那个是文生图（无输入图、画幅按需求语义定），规则不同，别混用。"
+}

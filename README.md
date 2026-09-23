@@ -16,7 +16,7 @@ load your own prompt skills, and push the result straight into your workflow nod
 | | |
 |---|---|
 | **接进工作流** | 节点 `🍃 风语 · 提示词` 接住文本。推送三级兜底：画布选中的 → 上次推过的 → 弹列表让你点。**推送不触发出图**，仍要自己点 `Queue Prompt` |
-| **可插拔 skill** | 一个 skill 一套人设与规则。芯片一条横滑切换，带「主 skill · 附加参考」两层。skill 从你的工作流导入，不在本仓库分发（见 [`skills/README.md`](skills/README.md)） |
+| **可插拔 skill** | 一个 skill 一套人设与规则。芯片一条横滑切换，带「主 skill · 附加参考」两层。仓库内置 9 个开箱可用（**均为网络收集，版权归原作者**，见 [`skills/README.md`](skills/README.md)），也能导入你自己的 |
 | **任意后端** | llama.cpp / Ollama / LM Studio / vLLM / OpenAI / DeepSeek / 任何 OpenAI 兼容端点。本地服务**不用填 API Key** |
 | **悬浮按钮 + 双形态** | 画布上一个可拖动的叶子按钮（位置记住）。**单击**开窄边栏（默认 420px，拖边缘可调宽），**双击**开居中大窗。共用同一份聊天记录 |
 | **多会话并行** | 想开多少开多少，各自命名、各自记上下文，关掉还能回来 |
@@ -57,6 +57,12 @@ llama-server.exe -m <你的模型>.gguf --port 8080 -c 32768
 
 > 💡 提示词生成是个「要理解、要遵守格式」的活，太小的模型会不听话（比如该给一段却给九段、
 > 忘了把结果包进代码围栏）。建议 14B 以上。
+
+> 🆓 **没有显卡 / 不想在本地跑？用免费的云 API 也行** —— 推荐 [**Agnes AI**](https://agnes-ai.com/)：
+> 免费开放文本 / 图像 / 视频的前沿模型，OpenAI 兼容接入，插件直接就能连。
+> 去 [platform.agnes-ai.com](https://platform.agnes-ai.com) 注册领 API Key，然后
+> **Key 填进面板设置、base URL 填它文档里给的那个**（云服务要填 Key，本地服务才不用），
+> 模型名从下拉里选一个。写提示词这种活，大模型比本地小模型听话得多。
 
 **2. 在面板里填地址**
 
@@ -124,7 +130,7 @@ llama-server.exe -m <你的模型>.gguf --port 8080 -c 32768
 ComfyUI-WindWhisper/
 ├── __init__.py              插件入口（节点注册 + 路由挂载）
 ├── adapters/                内置 skill 的适配规则（可选，见 skills/README.md）
-├── skills/                  内置 skill 目录（本仓库为空，理由见该目录的 README）
+├── skills/                  内置 skill 目录（9 个 · 网络收集，版权归原作者，见该目录 README）
 ├── windwhisper/
 │   ├── nodes.py             节点定义
 │   ├── routes.py            25 条 /windwhisper/* 路由
@@ -188,10 +194,16 @@ ComfyUI/user/default/WindWhisper/
 
 ## 许可
 
-[MIT](LICENSE) —— 随便用，保留版权声明即可。
+本项目的**代码**采用 [MIT](LICENSE) —— 随便用，保留版权声明即可。
+
+`skills/` 下的 skill **不是本项目的作品**，是网络收集来的第三方内容，**版权归各自原作者**，
+**不适用**本 MIT 许可；目录内自带 `LICENSE` / `NOTICE.md` 的以那些为准。
+作者如不希望被收录，提个 Issue 即可移除。详见 [`skills/README.md`](skills/README.md)。
 
 ---
 
-> ⚠️ **本仓库不含任何 skill 本体。** `skills/` 目录只有一个说明文件；
-> 你导入的 skill 落在 `ComfyUI/user/default/WindWhisper/skills/`，跟着你的 ComfyUI 走。
-> 理由与做法见 [`skills/README.md`](skills/README.md)。
+> ⚠️ **许可证只覆盖代码。** 仓库内置的 9 个 skill 均为**网络收集**，版权归各自原作者，
+> 仅作学习与个人创作之用 —— 详见 [`skills/README.md`](skills/README.md) 与各 skill 目录里的
+> `SOURCE.md`（作者申明即可移除）。
+> **你自己的 skill 不放这儿**：放 `ComfyUI/user/default/WindWhisper/skills/`，
+> 跟着你的 ComfyUI 走，插件更新也不会覆盖。

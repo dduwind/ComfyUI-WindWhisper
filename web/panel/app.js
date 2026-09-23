@@ -780,72 +780,319 @@ function toggleDrawer() { $("drawer").classList.toggle("open"); }
 
 /* ---------------------------------------------------------------- 消息渲染 */
 
-/* 模型被要求用 ```prompt 围栏包住最终提示词 —— 这里把它切成"可推到节点的卡片"。
- * 没有围栏就只能是普通文字，用户得手动复制，所以输出契约很重要。
+/* ==== WW_PARSE_BEGIN ==== */
+/* 一整段**纯函数**（不碰 DOM），所以能被静态桩整段抠出来跑断言：
+ *     node .workbuddy/tools/windwhisper_split_test.cjs
+ * 改之前先读那段测试。这里出问题**不会报错**，只会表现成"卡片和推送/存库按钮
+ * 凭空消失"，用户完全不知道为什么 —— 真机已经栽过两次。
  *
- * ⚠️⚠️ 为什么要有"未闭合"这一段：小模型（2bit 量化那种）**经常只写开头的 ```prompt
- * 就忘了收尾**。上面这个正则是成对匹配的，漏了收尾 → 整条回复退化成普通文字 →
- * 用户看到的是"卡片没了、推到节点和存库按钮也不见了"，而且完全不知道为什么。
- * 这是真机踩到的 bug（会话里那条 726 字符的回复，``` 只出现 1 次）。
- * 契约那边已经写了"收尾不能少"，但**不能指望模型**，面板必须自己兜住。 */
-function splitMessage(text) {
+ * 它比"找一个 ```prompt 围栏"复杂得多，是因为**不能指望模型**：
+ * 真机实测（女性人像导演 skill）模型吐的是
+ *     ```text 一、参数锁定结果 …  ```text 三、最终提示词 …  ```  …  ```text 四、负面约束 …  ```
+ * —— 三个 text 围栏、而且漏了一个收尾。按"成对匹配"去切，B 的正文会掉进普通文字里，
+ * 整条回复连一张卡片都剩不下（就是用户报的"按钮不见了"）。
+ *
+ * 所以这里是三层：
+ *   ① 围栏当"切换"处理 —— 漏收尾 / 多块 / 错配都能各归各位
+ *   ② 语言名放宽 —— prompt / text / 裸围栏 / markdown 都算提示词候选
+ *   ③ 通用后处理把「过程 / 提示词 / 负面词」拆开：认小标题，也认单块大杂烩
+ * 最后兜一层：实在认不出来就把整条当提示词，**按钮不允许消失**。
+ *
+ * 这一段的输出是 parts 数组，元素形态：
+ *     {kind:"text",    text}            普通文字（进气泡）
+ *     {kind:"card",    text, auto}      提示词卡片（auto: "fence"/"whole" = 是认出来的，不是模型标的）
+ *     {kind:"negative",text}            负面词（挂到最近的卡片上）
+ *     {kind:"process", text, pending}   过程说明（渲染时折起来，内容一个字不删）
+ *     {kind:"code",    text, lang}      真代码块（python / bash 这种，或有语言名的围栏）
+ */
+
+/** 这些语言名等于"没写语言名"，可以当提示词候选。 */
+var PLAIN_LANGS = { "": 1, prompt: 1, text: 1, txt: 1, plain: 1, plaintext: 1, markdown: 1, md: 1 };
+
+/** 明确是负面词的围栏。 */
+var NEG_LANGS = { negative: 1, neg: 1, negativeprompt: 1, negative_prompt: 1, bad: 1 };
+
+/** 「最终提示词」的标题特征 —— 命中就是卡片。 */
+var CARD_RE = /最终提示词|最终版本|提示词正文|可复制提示词|优化后提示词|final\s*prompt|optimized\s*prompt/i;
+/** 「负面约束」的标题特征。 */
+var NEG_RE = /负面约束|负面提示词|负向约束|negative\s*prompt|^negative$/i;
+/** 过程性小节的标题特征（这些块不配当卡片）。 */
+var PROC_RE = /参数锁定|模块解析|画面主目标|路由|自检|诊断|分析|优化原则|改写原则|推荐理由|问题清单|输出模式|输出格式|适用场景|输出规则|使用说明|工作流程|字段清单|组合规则/;
+
+/** 把一行收拾干净：去掉 # > * - 和【】《》[]（）包裹，便于当标题判断。 */
+function cleanHeading(line) {
+  var t = String(line == null ? "" : line).trim();
+  if (!t || t.length > 30) return "";
+  t = t.replace(/^[#>*\-\u2022\s]+/, "").replace(/[\s*#]+$/, "").trim();
+  t = t.replace(/^[【\[（(《]+/, "").replace(/[】\]）)》]+$/, "").trim();
+  return t.length > 26 ? "" : t;
+}
+
+/** 这一行是什么小标题？**只看短行** —— 免得把正文里提到"最终提示词"的句子当标题。 */
+function labelKind(line) {
+  var c = cleanHeading(line);
+  if (!c) return "";
+  if (CARD_RE.test(c)) return "prompt";
+  if (NEG_RE.test(c)) return "neg";
+  if (PROC_RE.test(c) && /^[一二三四五六七八九十\d]/.test(c)) return "proc";
+  return "";
+}
+
+function nonEmptyLines(t) {
+  return String(t == null ? "" : t).split("\n").filter(function (x) { return x.trim(); });
+}
+function tailLine(t) { var l = nonEmptyLines(t); return l.length ? l[l.length - 1].trim() : ""; }
+function soleLine(t) { var l = nonEmptyLines(t); return l.length === 1 ? l[0].trim() : ""; }
+
+/** 去掉围栏行本身 —— 标题劈块时会把开头那个 ```text 带进过程里，很难看。 */
+function stripFenceLines(t) {
+  return String(t == null ? "" : t).split("\n").filter(function (ln) {
+    return !/^\s*```/.test(ln);
+  }).join("\n");
+}
+
+/** 单块大杂烩：整段里自带「最终提示词」小标题 → 就地劈成 过程 / 提示词 / 负面。
+ *
+ * 这是最后一道防线：模型完全不听话、把所有东西塞进同一个 ```text 里时还能救回来。
+ * 返回 null = 没有可劈的标记（那就交给下面的小标题 / 语言名规则）。
+ * 过程段的章节标题（"一、参数锁定结果"）**保留**，一个字都不删。
+ */
+function splitMonolith(text) {
+  var lines = String(text == null ? "" : text).split("\n");
+  var bucket = { proc: [], prompt: [], neg: [] };
+  var sec = "proc";
+  var hitPrompt = false;
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i].replace(/\r$/, "");
+    var k = labelKind(ln);
+    if (k === "prompt") { sec = "prompt"; hitPrompt = true; continue; }
+    if (k === "neg") { sec = "neg"; continue; }
+    bucket[sec].push(ln);
+  }
+  if (!hitPrompt) return null;
+
   var out = [];
-  var s = String(text == null ? "" : text);
-  var re = /```([A-Za-z0-9_-]*)[ \t]*\r?\n([\s\S]*?)```/g;
-  var last = 0, m;
-  while ((m = re.exec(s)) !== null) {
-    if (s.slice(last, m.index).trim()) out.push({ kind: "text", text: s.slice(last, m.index) });
-    pushBlock(out, m[1], m[2]);
-    last = m.index + m[0].length;
-  }
+  var proc = stripFenceLines(bucket.proc.join("\n")).trim();
+  var prompt = stripFenceLines(bucket.prompt.join("\n")).trim();
+  var neg = stripFenceLines(bucket.neg.join("\n")).trim();
+  if (proc) out.push({ kind: "process", text: proc });
+  if (prompt) out.push({ kind: "card", text: prompt, auto: "fence" });
+  if (neg) out.push({ kind: "negative", text: neg });
+  return out.length ? out : null;
+}
 
-  // 兜底 1：尾巴里还剩一个"开了没闭"的围栏 —— 从它往后全算块体。
-  // 注意成对正则已经吃掉了所有能配对的围栏，所以这里最多只剩一个，
-  // 不用再担心把后面的内容一起吞掉。
-  var tail = s.slice(last);
-  var tailOpen = /```([A-Za-z0-9_-]*)[ \t]*\r?\n/.exec(tail);
-  if (tailOpen) {
-    // 只推非空白的前导文字，别把裸 \n 也塞成一段
-    if (tail.slice(0, tailOpen.index).trim()) {
-      out.push({ kind: "text", text: tail.slice(0, tailOpen.index) });
+/** 一个围栏块是什么？`tail` = 紧跟在它前面的那行小标题（没有就传空串）。
+ *
+ * 顺序是**故意**的：卡片判定必须在过程判定**之前**，否则"三、最终提示词"
+ * 会被 PROC_RE 里的"分析/输出格式"这类词先抢走。
+ */
+function classifyBlock(lang, body, tail) {
+  body = String(body == null ? "" : body).replace(/\s+$/, "");
+  if (!body.trim()) return [];
+
+  // ① 单块大杂烩（整段自带「最终提示词」小标题）→ 就地劈开
+  var mono = splitMonolith(body);
+  if (mono) {
+    // 劈完只剩一段过程、而过程末尾那句正是「三、最终提示词」——
+    // 说明提示词其实在**下一块**里。把这个标题留给下一块，
+    // 否则那张卡片会丢掉身份、退化成"自动识别"。
+    if (mono.length === 1 && mono[0].kind === "process") {
+      var last = tailLine(body);
+      if (labelKind(last) === "prompt") mono[0].pending = last;
     }
-    pushBlock(out, tailOpen[1], tail.slice(tailOpen.index + tailOpen[0].length));
-    last = s.length;
+    return mono;
   }
-  if (s.slice(last).trim()) out.push({ kind: "text", text: s.slice(last) });
 
-  // 兜底 2：模型没按契约写语言名，整条又只给了一个围栏 —— 那它八成就是提示词。
-  // 但**只在语言名是空的或泛文本标注时**才这么认：写明了 ```python / ```bash
-  // 说明它是有意给代码块，别硬转成"提示词卡片"。
-  var cards = out.filter(function (p) { return p.kind === "card"; });
-  var codes = out.filter(function (p) { return p.kind === "code"; });
-  if (!cards.length && codes.length === 1 && PLAIN_LANGS[codes[0].lang]) {
-    var idx = out.indexOf(codes[0]);
-    out[idx] = { kind: "card", text: codes[0].text.trim() };
-  }
-  return out;
+  var hk = labelKind(tail);
+  if (hk === "prompt") return [{ kind: "card", text: body }];
+  if (hk === "neg") return [{ kind: "negative", text: body }];
+  if (NEG_LANGS[lang]) return [{ kind: "negative", text: body }];
+  if (lang === "prompt") return [{ kind: "card", text: body }];
+  if (hk === "proc") return [{ kind: "process", text: body }];
+
+  // 没有小标题时看正文开头 —— 只取前 80 字，免得误伤提示词正文
+  var head = body.slice(0, 80);
+  if (PROC_RE.test(head) && !CARD_RE.test(head)) return [{ kind: "process", text: body }];
+
+  if (PLAIN_LANGS[lang]) return [{ kind: "cand", text: body }];
+  return [{ kind: "code", lang: lang, text: body }];
 }
 
-// 这些语言名等于"没写语言名"，可以放心当提示词
-var PLAIN_LANGS = { "": 1, text: 1, txt: 1, plain: 1, plaintext: 1, markdown: 1, md: 1 };
-
-function pushBlock(out, lang, body) {
-  lang = (lang || "").toLowerCase();
-  if (lang === "prompt") out.push({ kind: "card", text: body.trim() });
-  else out.push({ kind: "code", lang: lang, text: body.replace(/\s+$/, "") });
+/** 给"没写明是提示词"的块打分，挑最像的那个当卡片。
+ *  最可靠的判别信号是**英文占比**：提示词正文基本是英文，过程说明基本是中文。 */
+function scoreCand(t) {
+  var s = String(t || "");
+  if (!s.trim()) return -1e9;
+  var letters = (s.match(/[A-Za-z]/g) || []).length;
+  var sc = (letters / s.length) * 100;
+  if (PROC_RE.test(s.slice(0, 120))) sc -= 50;
+  if (/(^|\n)\s*[一二三四五六七八九十][、.．]/.test(s)) sc -= 25;
+  return sc + Math.min(s.length / 200, 10);
 }
 
-function cardHtml(text, msgIdx, cardIdx) {
+/** "整条当提示词"的闸门：够长 + 以英文为主。挡掉纯中文的闲聊问答。 */
+function blobLooksLikePrompt(t) {
+  var s = String(t == null ? "" : t).trim();
+  if (s.length < 60) return false;
+  var letters = (s.match(/[A-Za-z]/g) || []).length;
+  return letters / s.length >= 0.35;
+}
+
+function splitMessage(text) {
+  var s = String(text == null ? "" : text);
+  var parts = [];
+  var buf = [];
+  var fenceLang = null;
+  var fenceBody = [];
+  var lines = s.split("\n");
+  var i, j;
+
+  function flushText() {
+    var t = buf.join("\n");
+    buf = [];
+    if (t.replace(/\s+/g, "")) parts.push({ kind: "text", text: t });
+  }
+
+  function flushFence() {
+    var body = fenceBody.join("\n");
+    var lang = fenceLang;
+    fenceLang = null;
+    fenceBody = [];
+    if (!body.trim()) return;   // 空块丢掉 —— 不造一张没内容的卡片
+
+    var prev = parts.length ? parts[parts.length - 1] : null;
+    var tail = "";
+    if (prev && prev.kind === "text") {
+      tail = soleLine(prev.text) || tailLine(prev.text);
+    } else if (prev && prev.kind === "process" && prev.pending) {
+      tail = prev.pending;
+      delete prev.pending;
+    }
+
+    // 小标题单独占了一段（"三、最终提示词"这种）→ 并进块里，
+    // 别让它孤零零挂在气泡上、跟卡片对不上号
+    var hk = labelKind(tail);
+    if (prev && prev.kind === "text" && soleLine(prev.text) && hk) parts.pop();
+
+    var made = classifyBlock(lang, body, tail);
+    for (j = 0; j < made.length; j++) parts.push(made[j]);
+  }
+
+  for (i = 0; i < lines.length; i++) {
+    var raw = lines[i].replace(/\r$/, "");
+    var m = /^\s*`{3,}\s*([A-Za-z0-9_+.\-]*)\s*$/.exec(raw);
+    if (!m) {
+      if (fenceLang === null) buf.push(raw); else fenceBody.push(raw);
+      continue;
+    }
+
+    var flang = (m[1] || "").toLowerCase();
+
+    /* 围栏行 —— **统一当"切换"处理，不当"成对匹配"**。
+     * ⚠️ 这是整段代码里最反直觉、也最关键的一处。真机实测模型会写成
+     *      ```text A…   ```text B…   ```  四、负面约束   ```text C…   ```
+     *    忘了收 A 就直接开 B。按成对切，B（真正的提示词）会掉进普通文字里，
+     *    整条回复一张卡片都不剩；当切换切，A/B/C 三块各归各位、一个不丢。 */
+    if (fenceLang !== null) {
+      flushFence();                 // 关掉上一块
+      if (flang === "") continue;   // 裸围栏只负责关，不负责开（开了就是空块）
+    } else {
+      // 孤零零一个 ``` 而且后面什么都没有（收尾漏了开头）→ 当文字，别开空块
+      if (flang === "" && !lines.slice(i + 1).join("").replace(/\s+/g, "")) { buf.push(raw); continue; }
+      flushText();
+    }
+    fenceLang = flang;
+    fenceBody = [];
+  }
+  flushFence();
+  flushText();
+
+  /* ---------------- 后处理：保证"按钮不允许消失" ---------------- */
+  var hasCard = false;
+  for (i = 0; i < parts.length; i++) if (parts[i].kind === "card") hasCard = true;
+
+  // ②-1 一张卡片都没有 → 试试正文里带【最终提示词】小标题的写法（模型不套围栏那种）
+  if (!hasCard) {
+    var monoAll = splitMonolith(s);
+    if (monoAll) { parts = monoAll; hasCard = true; }
+  }
+
+  // ②-2 只有 ```text / 裸围栏 这类"没写明是提示词"的块 → 挑一个最像的当卡片
+  if (!hasCard) {
+    var cands = [];
+    for (i = 0; i < parts.length; i++) if (parts[i].kind === "cand") cands.push(i);
+    var best = -1, bestScore = -1e9;
+    for (i = 0; i < cands.length; i++) {
+      var sc = scoreCand(parts[cands[i]].text);
+      if (sc > bestScore) { bestScore = sc; best = cands[i]; }
+    }
+    if (best >= 0 && bestScore > 0) {
+      parts[best].kind = "card";
+      parts[best].auto = "fence";
+      hasCard = true;
+    }
+  }
+
+  // 没被选中的候选退回普通代码块 —— **不隐藏**，它也可能是另一版提示词
+  for (i = 0; i < parts.length; i++) {
+    if (parts[i].kind === "cand") { parts[i].kind = "code"; parts[i].lang = parts[i].lang || ""; }
+  }
+
+  // ②-3 最后一道：整条当提示词。用"够长 + 以英文为主"挡掉闲聊
+  if (!hasCard) {
+    var blob = stripFenceLines(s).trim();
+    if (blobLooksLikePrompt(blob)) parts = [{ kind: "card", text: blob, auto: "whole" }];
+  }
+
+  return parts;
+}
+/* ==== WW_PARSE_END ==== */
+
+/** 提示词卡片。
+ *
+ * `card.auto` 是"这一段是**认**出来的、不是模型自己标的"：
+ *   "fence" = 模型没用 ```prompt，是从 ```text 里认出来的
+ *   "whole" = 整条回复连围栏都没有，直接按整条处理
+ * 标出来是为了别让人以为模型乖乖听话了 —— 排查问题时要能一眼看出真相。
+ *
+ * `neg` 是这个 skill 顺带给的负面词（```negative 围栏或"四、负面约束"小节）。
+ * 它**不参与**复制 / 存库（那两个只取正向正文），推送时可以单独开关带上。 */
+function cardHtml(card, msgIdx, cardIdx, neg) {
+  var text = (card && card.text) || "";
   var id = "card-" + msgIdx + "-" + cardIdx;
-  var chars = text.length;
+
+  var chip = "";
+  if (card && card.auto === "fence") {
+    chip = '<span class="autochip" title="模型没按 prompt 契约写，这一段是从 text 围栏里认出来的">自动识别</span>';
+  } else if (card && card.auto === "whole") {
+    chip = '<span class="autochip" title="整条回复里没找到提示词围栏，已按整条处理">整条</span>';
+  }
+
+  var negHtml = "";
+  var nt = String(neg || "").trim();
+  if (nt) {
+    var nid = id + "-neg";
+    negHtml = '<div class="negsec" id="' + nid + '">'
+      + '<div class="negrow">'
+      + '<svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="5" y1="5" x2="19" y2="19"/></svg>'
+      + "<span>负面词</span><span class=\"dim\">" + nt.length + " 字</span>"
+      + '<span style="flex:1"></span>'
+      + '<button class="mini" onclick="copyNeg(\'' + nid + '\',this)" title="只复制负面词">复制</button>'
+      + '<button class="mini negsw" onclick="toggleNeg(\'' + id + '\',this)" title="打开后推到节点时会和正向提示词一起写进去（空行分隔）">推送时带上</button>'
+      + "</div>"
+      + '<div class="negbody">' + esc(nt) + "</div>"
+      + "</div>";
+  }
+
   return '<div class="card-note" id="' + id + '">'
     + '<div class="head">'
     + '<svg class="ic sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
-    + '<span>提示词</span><span class="grow"></span>'
+    + "<span>提示词</span>" + chip + '<span class="grow"></span>'
     + '<span class="pushed-badge"><svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg>已推到节点</span>'
-    + "<span>" + chars + " 字</span>"
+    + "<span>" + text.length + " 字</span>"
     + "</div>"
     + '<div class="body">' + esc(text) + "</div>"
+    + negHtml
     + '<div class="foot"><span class="grow" style="flex:1"></span>'
     + '<button class="mini" onclick="copyCard(' + msgIdx + "," + cardIdx + ',this)" title="只复制提示词正文，不带围栏标记">'
     + '<svg class="ic sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>复制</button>'
@@ -859,26 +1106,67 @@ function cardHtml(text, msgIdx, cardIdx) {
 /** 助手这一条：文字进气泡，提示词卡片挂在气泡**下面**（不放进气泡里）。
  *
  * 卡片单独一层是有原因的：被推到节点时整块要变渐变底色，塞在气泡里会被
- * 气泡自己的底色压住，状态就看不出来了。 */
+ * 气泡自己的底色压住，状态就看不出来了。
+ *
+ * ⚠️ 这里要分两趟走，不能边遍历边拼 HTML：负面词常常**排在卡片后面**
+ * （"四、负面约束"天然在"三、最终提示词"之后），一趟走的话卡片早就拼成
+ * 字符串了，没法再把负面词塞进去。所以先归拢成结构，再统一渲染。
+ *
+ * 过程说明（参数锁定结果 / 模块解析 那一大坨）收进一个**折叠区**：
+ * 用户要的是"过程别占正文"，但**内容一个字都不删** —— 折起来，想看随时点开。
+ */
 function assistantHtml(m, msgIdx) {
   var text = (m && m.text) || "";
   var parts = splitMessage(text);
-  var flow = [], cards = [], cardIdx = 0;
+  var cards = [];       // [{part, neg}]
+  var segs = [];        // 渲染顺序：[{kind:"card",at}] | {kind:"text"|"code"|"proc",...}
+  var pendingNeg = [];  // 还没找到卡片认领的负面词
+  var i;
 
   parts.forEach(function (p) {
     if (p.kind === "card") {
-      cards.push(cardHtml(p.text, msgIdx, cardIdx++));
+      cards.push({ part: p, neg: pendingNeg.shift() || "" });
+      segs.push({ kind: "card", at: cards.length - 1 });
+    } else if (p.kind === "negative") {
+      var at = null;
+      for (i = segs.length - 1; i >= 0; i--) { if (segs[i].kind === "card") { at = segs[i].at; break; } }
+      if (at === null) pendingNeg.push(p.text);
+      else cards[at].neg = cards[at].neg ? (cards[at].neg + "\n" + p.text) : p.text;
+    } else if (p.kind === "process") {
+      segs.push({ kind: "proc", text: p.text });
     } else if (p.kind === "code") {
-      flow.push('<pre class="codeblock" data-lang="' + esc(p.lang || "text") + '">' + esc(p.text) + "</pre>");
-    } else if (p.text.trim()) {
-      flow.push("<div>" + esc(p.text.trim()) + "</div>");
+      segs.push({ kind: "code", text: p.text, lang: p.lang || "" });
+    } else if (p.text && p.text.trim()) {
+      segs.push({ kind: "text", text: p.text });
     }
   });
+
+  var flow = [];
+  segs.forEach(function (s) {
+    if (s.kind === "code") {
+      flow.push('<pre class="codeblock" data-lang="' + esc(s.lang || "text") + '">' + esc(s.text) + "</pre>");
+    } else if (s.kind === "text") {
+      flow.push("<div>" + esc(s.text.trim()) + "</div>");
+    }
+  });
+
+  // 没人认领的负面词 → 当普通代码块显示，**不隐藏**
+  pendingNeg.forEach(function (t) {
+    flow.push('<pre class="codeblock" data-lang="negative">' + esc(t) + "</pre>");
+  });
+
+  var procs = segs.filter(function (s) { return s.kind === "proc"; });
+  if (procs.length) {
+    flow.push('<details class="procbox"><summary>过程说明 · ' + procs.length + " 段"
+      + "（模型附带的分析，已折叠 · 点开看）</summary>"
+      + procs.map(function (s) { return '<pre class="codeblock">' + esc(s.text) + "</pre>"; }).join("")
+      + "</details>");
+  }
 
   var out = "";
   if (flow.length) out += '<div class="bubble">' + flow.join("") + "</div>";
   if (!flow.length && !cards.length) out += emptyBubbleHtml(m);
-  return out + cards.join("");
+  return out + cards.map(function (c, idx) { return cardHtml(c.part, msgIdx, idx, c.neg); }).join("");
 }
 
 /* 正文一个字都没有时，别只丢一句"（空回答）"—— 那等于什么都没说。
@@ -2040,11 +2328,43 @@ function exportLib() {
 
 /* ------------------------------------------------------------ 推送到节点 */
 
+/** 卡片上的「推到节点」。
+ *
+ * 负面词默认**不带** —— 它只挂在那张卡片里等你决定。点了「推送时带上」才拼进去
+ * （用空行分隔，因为风语节点只有一个 text 控件，没地方单独放负面词）。 */
 function pushNode(cardId) {
   var card = $(cardId);
   if (!card) return;
   var body = card.querySelector(".body");
-  requestPush(body ? body.textContent.trim() : "", "chat", cardId);
+  var text = body ? body.textContent.trim() : "";
+
+  var sec = $(cardId + "-neg");
+  if (sec && sec.classList.contains("on")) {
+    var nb = sec.querySelector(".negbody");
+    var nt = nb ? nb.textContent.trim() : "";
+    if (nt) text = text + "\n\n" + nt;
+  }
+  requestPush(text, "chat", cardId);
+}
+
+/** 负面词区的「推送时带上」开关。 */
+function toggleNeg(cardId, btn) {
+  var sec = $(cardId + "-neg");
+  if (!sec) return;
+  var on = sec.classList.toggle("on");
+  if (btn) {
+    btn.classList.toggle("on", on);
+    btn.textContent = on ? "不带负面词" : "推送时带上";
+  }
+}
+
+/** 负面词区的「复制」：只取负面词那段，不动正向正文。 */
+function copyNeg(negId, btn) {
+  var sec = $(negId);
+  var nb = sec ? sec.querySelector(".negbody") : null;
+  var t = nb ? nb.textContent.trim() : "";
+  if (!t) { toast("这段没有负面词", true); return; }
+  doCopy(t, btn);
 }
 
 function pushFromLib() {

@@ -22,20 +22,28 @@ desktop.ini
 # **之外**，本来就不会被这个仓库碰到。下面几条是**兜底**：万一哪天 store.py 走了
 # 「取不到 user_directory → 退回插件目录 userdata/」那条路，也不会把配置、聊天
 # 记录、词库提交上去。
+#
+# ⚠️ 一律带前导 `/`（只匹配**仓库根**）：不带的话 `config.json` 这类是**按名字**匹配的，
+#    任何层级都命中 —— 将来某个 skill 自带同名文件就会被静默漏发（2026-09-23 收紧）。
 userdata/
-chats/
-library.json
-config.json
+/chats/
+/library.json
+/config.json
 
-# ---------------------------------------------------------------- skill 本体
+# ------------------------------------------------- skill 本体（2026-09-23 反转：要全发）
 #
-# 本仓库**不分发 skill**，所以 skills/ 下只有一个说明文件。
+# ⚠️ **别再写 `skills/*`。** 旧规则用它排除整个 skills/ 来「不分发 skill」，后果是把
+#    9 个 skill 全挡在 git 外面；而 `!skills/README.md` 只能反排除**根级那一个文件**，
+#    救不回 `skills/<id>/` 里的内容 —— 推上 GitHub 会一个 skill 都没有。
+#    （2026-09-23 实测：`git ls-files skills` 只列出 `skills/README.md`）
 #
-# 原因：WindWhisper 的 skill 是从你自己的工作流（WorkBuddy 等）导入的，很多带
-# 第三方作者与许可证，混进插件仓库既不合适也不好维护。插件内置目录留空即可，
-# 你导入的 skill 会落在 user/default/WindWhisper/skills/，跟着你的 ComfyUI 走。
+# 现在（v0.5.x 起）**内置 9 个 skill 随插件分发**，克隆下来开箱可用 → 全部进 git。
+# 它们都是第三方内容（网络收集 / MiniMax·Qwen 官方 / 个别带 MIT），**版权归各自原作者**；
+# 每个目录都带 `SOURCE.md` 或 `README.md` / `NOTICE.md` 说明来源，作者申明即可移除。
+# 详见 `skills/README.md` 的「来源声明」节。
 #
-# ⚠️ 写 `skills/*` 而不是 `skills/` —— 父目录本身一旦被排除，
-#    后面的 `!skills/README.md` 反排除会失效（git 不进被排除的目录）。
-skills/*
-!skills/README.md
+# 你自己导入的 skill **不在这个目录**，在 `ComfyUI/user/default/WindWhisper/skills/`
+# （插件目录之外），本来就碰不到本仓库。
+#
+# 另：skills/ 里全是 .md/.txt，无需再排除运行时产物 —— 全局的 __pycache__/、*.bak
+# 等规则已经覆盖 Python 缓存与备份文件。

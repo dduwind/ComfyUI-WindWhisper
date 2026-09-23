@@ -1,0 +1,12 @@
+{
+  "name": "Qwen · 文生图提示词",
+  "category": "通用",
+  "icon": "tag",
+  "inject": [
+    "SKILL.md",
+    "references/t2i-guide.txt",
+    "WW-OUTPUT.md"
+  ],
+  "strip_sections": [],
+  "_note": "Qwen 官方 Image Prompt Enhancer 的文生图 system prompt，上游文件一字未改（版权与来源见目录内 README.md）。\n\n⚠️ 上游要求**返回 JSON**（rewritten_prompt + wh_ratio）。WindWhisper 不解析 JSON —— 照原格式输出的话，界面上的卡片和「复制 / 存库 / 推到节点」三个按钮**一个都不会出现**。所以末尾追加了 WW-OUTPUT.md，把输出改成 prompt 围栏 + 围栏外一行画幅比例。它排在 inject 最后一位（位置越靠后模型越容易服从），删掉它按钮就没了。\n\n跟 Qwen-Image-2.1-PE-I2I 是姊妹 skill：这个只管文生图（没有输入图），画幅按需求语义或默认值决定；那个是图像编辑，规则完全不同，别混用。"
+}
