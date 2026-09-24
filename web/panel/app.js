@@ -50,6 +50,7 @@ var state = {
   libFile: "",           // library.json 的落盘路径（界面里显示，省得你去找）
   skEditId: null,        // 正在编辑的 skill id；新建时为 null
   skEditNew: false,
+  skAdapterOnly: false,  // 「写适配」模式：id/正文只读，保存只写适配层（不碰 SKILL.md）
   skImportDir: "",       // 最近一次扫描的目录
   skImportItems: [],     // 扫描结果
   skImportSel: {},       // {id: true} 勾选状态
@@ -267,6 +268,13 @@ function findSkill(id) {
   return skills.filter(function (s) { return s.id === id; })[0] || null;
 }
 
+/** 第一个「启用中」的 skill id；一个都没启用就返回 null。
+ *  禁用的 skill 不许再被兜底成人设 —— 用户禁用就是为了少切换。 */
+function firstEnabledSkill() {
+  for (var i = 0; i < skills.length; i++) if (skills[i].enabled !== false) return skills[i].id;
+  return null;
+}
+
 function loadSkills() {
   skills = demoSkills;
   skillMode = "demo";
@@ -278,7 +286,7 @@ function loadSkills() {
     if (!skills.length) {
       toast("扫到 0 个 skill —— 看看 ComfyUI 控制台，或确认 skills/ 目录里有 SKILL.md", true);
     }
-    if (!findSkill(state.masterId)) state.masterId = skills.length ? skills[0].id : null;
+    if (!findSkill(state.masterId)) state.masterId = firstEnabledSkill();
     refreshSkillUI();
   }).catch(function (err) {
     console.warn("[风语] skill 接口不可达，改用演示数据：", err.message);
@@ -287,9 +295,14 @@ function loadSkills() {
 }
 
 function refreshSkillUI() {
-  if (state.masterId == null && skills.length) state.masterId = skills[0].id;
-  // 人设被删掉 / 换过之后，参考列表里可能留了已经不存在的 id
-  state.refIds = state.refIds.filter(function (id) { return !!findSkill(id) && id !== state.masterId; });
+  // 人设兜底：没设过、或当前人设已被禁用 → 换成第一个启用中的（没有就 null）
+  var curMaster = findSkill(state.masterId);
+  if (state.masterId == null || (curMaster && curMaster.enabled === false)) state.masterId = firstEnabledSkill();
+  // 人设被删掉 / 禁用 / 换过之后，参考列表里可能留了失效的 id —— 一起清
+  state.refIds = state.refIds.filter(function (id) {
+    var s = findSkill(id);
+    return !!s && s.enabled !== false && id !== state.masterId;
+  });
   renderChips();
   renderCats();
   renderSkills();
@@ -349,6 +362,7 @@ function fillSettings() {
   if (c.config_file) $("cfgPath").title = c.config_file;
   renderBasePresets();   // 自己加的地址存在本地，每次打开设置都按最新的画一遍
   toggleAddPreset(false);
+  refreshModelFlag();    // 上次拉过的话，顺手把"这个名字对不上"标出来
   setCfgStatus(state.cfg ? "读到了当前配置，改完记得点保存" : "没读到配置，先把地址填上", "");
 }
 
@@ -408,9 +422,100 @@ function setCfgStatus(html, kind) {
   el.innerHTML = html;
 }
 
-function presetBase(url) {
+/* ------------------------------------------------------------ 服务档案
+ *
+ * 「地址 / Key / 模型」这三样是**绑在服务上的**，跨服务不通用：llama.cpp 的
+ * `qwen3-8b` 拿到 Agnes 上根本不存在，Key 也一样。
+ *
+ * 原来「快速填地址」只填地址，于是切过去之后模型框里还留着上一个服务的名字 ——
+ * 用户看到的就是「切到 Agnes 模型没变」。更阴的是：拉取其实**拉通了**，
+ * 但原生 <datalist> 会拿框里那个残留名字去过滤候选，一条都对不上，下拉就是空的，
+ * 非得把框清空才看得到 —— 于是被当成"拉取坏了"。
+ *
+ * 所以这里按地址存一套档案：走之前存下当前这套，到了新地址先看有没有档案，
+ * 有就整套装回来（切来切去不用重配），没有就清空再顺手拉一次。 */
+var BASES_KEY = "windwhisper_bases_v1";
+
+/* 地址归一化，和 llm.py 的 normalize_base 保持同一套口径 ——
+ * 不然后端认这两个是同一个服务，前端档案却记成两条。 */
+function normBase(u) {
+  var b = String(u == null ? "" : u).trim().replace(/\/+$/, "");
+  if (!b) return "";
+  b = b.replace(/\/chat\/completions$/i, "");
+  if (!/\/v\d+$/i.test(b)) b = b + "/v1";
+  return b.toLowerCase();
+}
+
+function readBaseMemory() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(BASES_KEY) || "{}");
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  } catch (e) {
+    return {};   // 存脏了就当没有，别因此打不开设置面板
+  }
+}
+
+function writeBaseMemory(m) {
+  try { localStorage.setItem(BASES_KEY, JSON.stringify(m || {})); }
+  catch (e) { /* 隐私模式写不了：这次能用，刷新就没了，不打断操作 */ }
+}
+
+/** 把**当前输入框里这套**记到某个地址名下。 */
+function stashBase(base) {
+  base = normBase(base);
+  if (!base) return;
+  var m = readBaseMemory();
+  m[base] = {
+    key: $("cfgKey").value,
+    model: $("cfgModel").value.trim(),
+    ts: Date.now()
+  };
+  writeBaseMemory(m);
+}
+
+function recallBase(base) {
+  base = normBase(base);
+  if (!base) return null;
+  var hit = readBaseMemory()[base];
+  return (hit && typeof hit === "object") ? hit : null;
+}
+
+/** 点一下「快速填地址」= **整套**切过去：地址 + Key + 模型一起换。
+ *  第二参数是这条预设自己带的模型（添加地址时可以顺手填）。 */
+function presetBase(url, presetModel) {
+  var from = normBase($("cfgBase").value);
+  var to = normBase(url);
+  if (from && from !== to) stashBase(from);   // 先把走之前那套存下
+
   $("cfgBase").value = url;
-  setCfgStatus("地址填好了，点「测试连接」试试", "");
+  var mem = recallBase(to);
+  var model = (mem && mem.model) || presetModel || "";
+
+  if (mem) {
+    // 来过 → 整套装回来（Key 空着也是"上次就是这个状态"）
+    $("cfgKey").value = mem.key || "";
+    $("cfgModel").value = model;
+    refreshModelFlag();
+    setCfgStatus("✓ 切到 <b>" + esc(hostOf(url)) + "</b>，Key 和模型按上次那套填好了"
+      + (model ? "：<code>" + esc(model) + "</code>" : "（上次没填模型）")
+      + "<br>要换模型就点「选一个」，改完点保存", "ok");
+    return;
+  }
+
+  // 第一次来这个地址：Key 和模型都不通用，**清掉**，别让上一个服务的残留在这儿装样子
+  $("cfgKey").value = "";
+  $("cfgModel").value = model;
+  refreshModelFlag();
+  if (model) {
+    // 预设自带模型：直接可用，不用白跑一次网络
+    setCfgStatus("地址填好了，模型用的是这条预设带的 <code>" + esc(model) + "</code>"
+      + "<br>点「测试连接」确认一下能不能通", "");
+  } else {
+    // 新地址、又没模型可带 → 顺手拉一次并**把清单弹出来**：
+    // 一来省一步，二来让人一眼看到"拉取确实通了"（用户原来怀疑的就是这个）。
+    setCfgStatus("新地址，模型先空着 —— 正在拉这个服务的模型列表…", "busy");
+    pullModels(true);
+  }
 }
 
 /* ------------------------------------------------- 快速填地址（默认 + 自己加的）
@@ -432,7 +537,7 @@ function readBasePresets() {
     return raw.filter(function (p) {
       return p && typeof p.url === "string" && p.url;
     }).map(function (p) {
-      return { name: String(p.name || ""), url: String(p.url) };
+      return { name: String(p.name || ""), url: String(p.url), model: String(p.model || "") };
     });
   } catch (e) {
     return [];   // 存脏了就当没有，别因此打不开设置面板
@@ -444,15 +549,18 @@ function writeBasePresets(list) {
   catch (e) { toast("浏览器不让写本地存储，这次能用，刷新就没了", true); }
 }
 
-/** 画「快速填地址」那一排。默认的在前面且不能删，自己加的后面跟一个小 ×。 */
+/** 画「快速填地址」那一排。默认的在前面且不能删，自己加的后面跟一个小 ×。
+ *  自己加的可以带一个模型名（添加时可以顺手填）—— 点一下就整套切过去。 */
 function renderBasePresets() {
   var box = $("basePresets");
   if (!box) return;
   var mine = readBasePresets();
   box.innerHTML = BASE_PRESETS.concat(mine).map(function (p, i) {
     var custom = i >= BASE_PRESETS.length;
+    var tip = p.model ? p.url + " · 模型 " + p.model : p.url;
     return '<span class="pwrap' + (custom ? " custom" : "") + '">'
-      + '<button class="tbtn" onclick="presetBase(\'' + safeUrl(p.url) + '\')" title="' + esc(p.url) + '">'
+      + '<button class="tbtn" onclick="presetBase(\'' + safeUrl(p.url) + '\',\'' + safeModel(p.model) + '\')"'
+      + ' title="' + esc(tip) + '">'
       + esc(p.name || hostOf(p.url)) + "</button>"
       + (custom
         ? '<button class="px" onclick="delBasePreset(' + (i - BASE_PRESETS.length) + ')" title="删掉这条">'
@@ -475,6 +583,14 @@ function hostOf(u) {
   return String(u == null ? "" : u).replace(/^https?:\/\//i, "").replace(/\/.*$/, "") || "自定义";
 }
 
+/** 要塞进事件属性里的模型名：削掉引号 / 反斜杠 / 尖括号，剩下的原样留。
+ *  💡 别拿 jsid() 来干这事 —— 它只留字母数字和 _.-，而真模型名长这样：
+ *     `meta-llama/Llama-3.1-8B-Instruct`、`Qwen/Qwen2.5-VL-7B:free`。
+ *     削完名字就认不出来了，填进框里是废的。 */
+function safeModel(s) {
+  return String(s == null ? "" : s).replace(/[^A-Za-z0-9._:\/+@\- ]/g, "");
+}
+
 function toggleAddPreset(force) {
   var box = $("addPreset");
   var btn = $("presetAddBtn");
@@ -485,6 +601,7 @@ function toggleAddPreset(force) {
   if (show) {
     $("apName").value = "";
     $("apUrl").value = "";
+    if ($("apModel")) $("apModel").value = "";
     $("apName").focus();
   }
 }
@@ -492,6 +609,7 @@ function toggleAddPreset(force) {
 function addBasePreset() {
   var name = $("apName").value.trim();
   var raw = $("apUrl").value.trim();
+  var model = safeModel($("apModel") ? $("apModel").value.trim() : "");
   if (!raw) { toast("地址得填一个", true); $("apUrl").focus(); return; }
 
   // 没带协议头就补一个：本机/内网补 http，其余补 https（云服务清一色 https）。
@@ -514,11 +632,11 @@ function addBasePreset() {
   }
 
   var list = readBasePresets();
-  list.push({ name: name || hostOf(url), url: url });
+  list.push({ name: name || hostOf(url), url: url, model: model });
   writeBasePresets(list);
   renderBasePresets();
   toggleAddPreset(false);
-  presetBase(url);
+  presetBase(url, model);   // 顺手切过去；带模型的话就不用再拉一次了
   toast("加好了，以后就一直在「快速填地址」里" + (dirty ? "（地址里有不支持的字符，已去掉）" : ""));
 }
 
@@ -531,26 +649,215 @@ function delBasePreset(i) {
   toast("删掉了「" + (gone.name || gone.url) + "」");
 }
 
-function fillModels(list) {
-  var dl = $("cfgModels");
-  dl.innerHTML = (list || []).map(function (m) {
-    return '<option value="' + esc(m) + '"></option>';
+/* ------------------------------------------------- 模型清单（自绘浮层）
+ *
+ * 为什么不用原生 <datalist>：它的候选会被**输入框里现有的文字过滤**。
+ * 切服务之后框里还留着上一个服务的模型名（比如 llama 的 qwen3-8b），
+ * Agnes 那边的候选一条都对不上 → 下拉直接是空的，看着就像"拉取没出来"，
+ * 非得把框清空才看得到。这不是拉取坏了，是候选被自己框里的字过滤光了。
+ *
+ * 自绘浮层把「过滤」这件事交给一个显式搜索框：默认全列，想收窄才打字。 */
+var MODEL_LIST = [];        // 最近一次拉到的模型（内存里就够，刷新重拉一次的事）
+var modelMenuEl = null;
+var modelPulling = false;
+
+function setModelList(list) {
+  MODEL_LIST = (list || []).map(String).filter(Boolean);
+  refreshModelFlag();
+}
+
+/** 当前框里的名字不在刚拉到的清单里 → 标出来。
+ *  跨服务的模型名永远不可能通用，这种"残留"必须让它显形，否则用户会以为
+ *  拉取失败、或者带着一个必然 400 的模型名去发消息。 */
+function refreshModelFlag() {
+  var el = $("cfgModel");
+  if (!el) return;
+  var cur = el.value.trim();
+  var stale = !!(MODEL_LIST.length && cur && MODEL_LIST.indexOf(cur) < 0);
+  el.classList.toggle("stale", stale);
+  syncModelClear();
+
+  var hint = $("modelHint");
+  if (!hint) return;
+  hint.classList.toggle("warn", stale);
+  if (stale) {
+    hint.innerHTML = "⚠️ <b>" + esc(cur) + "</b> 不在这个服务的模型列表里（多半是上一个服务留下的）—— "
+      + "点框里的 × 清掉。";
+  } else if (MODEL_LIST.length) {
+    hint.textContent = "这个服务有 " + MODEL_LIST.length + " 个模型可用，点右侧箭头展开、也能搜。";
+  } else {
+    hint.textContent = "切换服务时地址 / Key / 模型会整套跟着换。点右侧箭头拉取并挑选。";
+  }
+}
+
+/** 框里有字才露那个 ×（跟浏览器自带的搜索框一个规矩，空框上挂个 × 是噪音）。 */
+function syncModelClear() {
+  var el = $("cfgModel");
+  var x = $("cfgModelClear");
+  if (x && el) x.hidden = !el.value.trim();
+}
+
+/** 框里打字：× 跟着显隐，残留标记也实时更新。 */
+function onModelInput() {
+  refreshModelFlag();
+}
+
+/** 键盘走一遍基操：↓ 展开清单，Esc 收掉。 */
+function onModelKey(ev) {
+  if (!ev) return;
+  if (ev.key === "ArrowDown") { ev.preventDefault(); openModelMenu(); }
+  else if (ev.key === "Escape" && modelMenuEl) {
+    // ⚠️ 必须 stopPropagation：document 上那个全局 Esc 会顺手把**整个设置面板**关掉，
+    //    不然按一下 Esc「清单和面板一起没了」。只在清单真的开着时才拦，
+    //    清单没开时保持原行为（Esc 关面板）。
+    ev.stopPropagation();
+    closeModelMenu();
+  }
+}
+
+/** ×：只清空。不顺手弹清单 —— 清空是个纯动作，弹层该由用户自己点箭头决定。 */
+function clearModel() {
+  var el = $("cfgModel");
+  if (!el) return;
+  el.value = "";
+  refreshModelFlag();
+  el.focus();
+}
+
+function closeModelMenu() {
+  if (modelMenuEl && modelMenuEl.parentNode) modelMenuEl.parentNode.removeChild(modelMenuEl);
+  modelMenuEl = null;
+  var box = $("cfgModelBox");
+  if (box) box.classList.remove("open");     // 箭头翻回去
+  document.removeEventListener("pointerdown", onModelMenuAway, true);
+  window.removeEventListener("scroll", onModelMenuScroll, true);
+  window.removeEventListener("resize", closeModelMenu);
+}
+
+/** 箭头：开着就收、收着就开（一个图标一个动作，跟原生 combobox 一致）。 */
+function toggleModelMenu() {
+  if (modelMenuEl) closeModelMenu();
+  else openModelMenu();
+}
+
+function onModelMenuAway(ev) {
+  if (modelMenuEl && modelMenuEl.contains(ev.target)) return;   // 点在菜单自己身上 → 不关
+  closeModelMenu();
+}
+
+function onModelMenuScroll(ev) {
+  // 菜单自己那个清单滚的时候别关（scroll 事件不冒泡，所以用的是捕获）
+  if (modelMenuEl && modelMenuEl.contains(ev.target)) return;
+  closeModelMenu();
+}
+
+function renderModelItems(q) {
+  // ⚠️ 用 querySelector 而不是 $()：这个清单是 openModelMenu 现造的节点，
+  //    不在 index.html 里 —— 静态检查「$() 引用的 id 必须存在于 HTML」会直接报错，
+  //    而且那条规定本身就是对的，别为了这个往 HTML 里塞空壳。
+  var box = modelMenuEl ? modelMenuEl.querySelector(".sklist") : null;
+  if (!box) return;
+  var cur = ($("cfgModel").value || "").trim();
+  var kw = String(q == null ? "" : q).trim().toLowerCase();
+  var list = MODEL_LIST.filter(function (m) {
+    return !kw || m.toLowerCase().indexOf(kw) >= 0;
+  });
+  if (!list.length) {
+    box.innerHTML = '<div class="skmi hint">' + (kw ? "没有匹配的模型" : "这个服务没返回模型，手填吧") + "</div>";
+    return;
+  }
+  // 模型名走 data-m + getAttribute，不往事件属性里拼字符串 ——
+  // 名字里带 / 、: 、@ 的多的是（meta-llama/Llama-3.1-8B:free），拼字符串迟早踩到引号
+  box.innerHTML = list.map(function (m) {
+    return '<button class="skmi' + (m === cur ? " on" : "") + '" data-m="' + esc(m) + '"'
+      + ' onclick="pickModel(this)">' + esc(m) + "</button>";
   }).join("");
 }
 
-function pullModels() {
+function pickModel(btn) {
+  var m = btn.getAttribute("data-m") || "";
+  $("cfgModel").value = m;
+  closeModelMenu();
+  refreshModelFlag();
+  setCfgStatus("模型选好了：<code>" + esc(m) + "</code> —— 记得点保存", "ok");
+}
+
+/** 弹出模型清单。没拉过就先拉，拉完自动弹（省一步，也避免"点了没反应"的错觉）。 */
+function openModelMenu() {
+  closeModelMenu();
+  if (!MODEL_LIST.length) {
+    if (!modelPulling) pullModels(true);
+    return;
+  }
+
+  var anchor = $("cfgModel");
+  if (!anchor) return;
+
+  var el = document.createElement("div");
+  el.className = "skmenu skmodels";
+  // 「重新拉取」放在清单**里面**、.sklist **外面**：renderModelItems 每次重画 .sklist
+  // 会把它一起冲掉。宁可多这一行，也不让「有缓存之后就再也刷不了」。
+  el.innerHTML = '<input class="sksearch" placeholder="搜模型名…" spellcheck="false"'
+    + ' oninput="renderModelItems(this.value)">'
+    + '<div class="sklist"></div>'
+    + '<button type="button" class="skmi refresh" onclick="refreshModels()">'
+    + svg('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>'
+      + '<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>')
+    + "重新拉取列表</button>";
+  document.body.appendChild(el);
+  modelMenuEl = el;
+  renderModelItems("");
+
+  var box0 = $("cfgModelBox");
+  if (box0) box0.classList.add("open");      // 箭头转成朝上
+
+  // 贴着模型框展开：宽度对齐输入框（但**封顶 360** —— 面板拖宽时不能拉成一条
+  // 1200px 的空管子），下面塞不下就翻到上面
+  var r = anchor.getBoundingClientRect();
+  var w = Math.min(360, Math.max(220, Math.round(r.width)));
+  el.style.minWidth = w + "px";
+  var box = el.getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - box.width - 10)) + "px";
+  var below = r.bottom + 6;
+  el.style.top = (below + box.height <= window.innerHeight - 8
+    ? below
+    : Math.max(8, r.top - box.height - 6)) + "px";
+
+  var search = el.querySelector(".sksearch");
+  if (search) search.focus();
+  // 推迟一拍再挂"点别处就关"，否则这次点按钮的 pointerdown 会立刻把菜单关掉
+  setTimeout(function () {
+    document.addEventListener("pointerdown", onModelMenuAway, true);
+    window.addEventListener("scroll", onModelMenuScroll, true);
+    window.addEventListener("resize", closeModelMenu);
+  }, 0);
+}
+
+/** 清单里那行「重新拉取」：收掉浮层重新拉一遍（缓存是每次拉完刷新的，想重来就走这里）。 */
+function refreshModels() {
+  closeModelMenu();
+  pullModels(false);
+}
+
+/** 拉模型列表。autoOpen = 拉完把清单弹出来（从箭头进来、清单还是空的时候用这个）。 */
+function pullModels(autoOpen) {
+  if (modelPulling) return;
+  modelPulling = true;
   setCfgStatus("正在拉模型列表…", "busy");
   // 用 config/test 而不是 /models —— 这样**没保存的新地址也能测**
   WW.testConfig(collectSettings()).then(function (r) {
     if (r.ok) {
-      fillModels(r.models);
-      setCfgStatus("✓ " + r.base + " · " + r.ms + " ms · 拿到 " + (r.count || 0) + " 个模型"
-        + (r.count ? "，点模型框就能选" : "") + (r.note ? "<br>" + r.note : ""), "ok");
+      setModelList(r.models);
+      setCfgStatus("✓ " + esc(r.base) + " · " + r.ms + " ms · 拿到 " + (r.count || 0) + " 个模型"
+        + (r.count ? "，点右侧箭头挑" : "") + (r.note ? "<br>" + esc(r.note) : ""), "ok");
+      if (autoOpen && MODEL_LIST.length) openModelMenu();
     } else {
       setCfgStatus("✗ " + (r.error || "连不上"), "err");
     }
   }).catch(function (e) {
     setCfgStatus("✗ " + esc(e.message), "err");
+  }).then(function () {
+    modelPulling = false;   // 成功失败都解锁
   });
 }
 
@@ -558,7 +865,7 @@ function testBackend() {
   setCfgStatus("正在测试连接…", "busy");
   WW.testConfig(collectSettings()).then(function (r) {
     if (r.ok) {
-      fillModels(r.models);
+      setModelList(r.models);
       state.backendOk = true;
       renderBackend();
       setCfgStatus("✓ 连上了 <b>" + esc(r.base) + "</b> · " + r.ms + " ms · " + (r.count || 0) + " 个模型"
@@ -583,10 +890,12 @@ function saveSettings() {
   WW.saveConfig(patch).then(function (d) {
     state.cfg = d.config;
     state.backendOk = state.backendOk;
+    // 存一套档案：下次从别的服务切回这个地址，Key 和模型直接带回来，不用重配
+    stashBase(patch.base_url);
     renderBackend();
     renderSyscap();
     toast("配置已保存到 " + d.config.config_file, true);
-    setCfgStatus("✓ 已保存", "ok");
+    setCfgStatus("✓ 已保存" + (patch.model ? "（模型 <code>" + esc(patch.model) + "</code>）" : ""), "ok");
   }).catch(function (e) {
     setCfgStatus("✗ 保存失败：" + esc(e.message), "err");
   });
@@ -601,6 +910,7 @@ function previewSystem() {
   $("skvNote").textContent = "";
   $("skvBody").textContent = "拼装中…";
   $("skvHint").textContent = "";
+  state.skViewBack = null;   // 聊天里单独预览：下面没有列表，关闭就是收掉
   openSheet("skview");
 
   WW.systemPrompt(state.masterId, state.refIds).then(function (d) {
@@ -690,8 +1000,14 @@ function pickConv(id) {
 function openChat(id, silent) {
   return WW.getChat(id).then(function (chat) {
     state.chat = chat;
-    if (chat.skillId && findSkill(chat.skillId)) state.masterId = chat.skillId;
-    state.refIds = (chat.refIds || []).filter(function (r) { return !!findSkill(r); });
+    if (chat.skillId) {
+      var chatSkill = findSkill(chat.skillId);
+      if (chatSkill && chatSkill.enabled !== false) state.masterId = chat.skillId;
+    }
+    state.refIds = (chat.refIds || []).filter(function (r) {
+      var rs = findSkill(r);
+      return !!rs && rs.enabled !== false;
+    });
     state.lastMeta = null;
     pushedCardId = null;
     hidePushedBar();
@@ -1267,8 +1583,11 @@ function sendMessage() {
 
   el.value = "";
   autoGrow(el);
-  if (!text) text = IMG_TIP;
-  doSend(text, img);
+  // 拖图时弹的「反推 / 交给 skill」选择要带下去：默认反推（零回归），
+  // 选了 skill（reference）就不塞反推指令 —— 交给 skill 自己的系统提示去描述图。
+  var intent = state.imageIntent || "reverse";
+  if (!text && intent !== "skill") text = IMG_TIP;
+  doSend(text, img, intent);
 }
 
 /* 发消息前的三道门。抽出来是因为「关掉思考重来」也得走同一套校验。 */
@@ -1281,14 +1600,16 @@ function canSend() {
 
 /* img 有两种：{data} = 刚从文件读进来压过的图，{ref} = 历史里那条消息上的素材名。
  * 内存副本里两种情况都存原样 —— 渲染时由 imageSrc() 分辨（见那边的注释）。 */
-function doSend(text, img) {
-  state.chat.msgs.push({ role: "user", text: text, image: img ? (img.data || img.ref) : null, ts: Date.now() });
+function doSend(text, img, intent) {
+  if (img) intent = intent || "reverse";
+  state.chat.msgs.push({ role: "user", text: text, image: img ? (img.data || img.ref) : null, image_intent: img ? (intent || "") : null, ts: Date.now() });
   renderMessages();
   scrollToBottom(true);
 
   // 图已经跟着这条消息走了，输入区那条预览撤掉（失败也撤 —— 这条消息本身就在，
   // 实在要重发，点卡片/重新附加都比"取消勾选"直观）
   state.pendingImage = null;
+  state.imageIntent = null;
   renderImgStrip();
 
   var holder = startBubble();
@@ -1305,7 +1626,9 @@ function doSend(text, img) {
       // 只发其中一条：新贴的给 data URL，重发历史那条给素材名（后端读文件补回 data URL）
       image: img && img.data ? img.data : null,
       imageRef: img && img.ref ? img.ref : null,
-      masterId: state.masterId, refIds: state.refIds
+      masterId: state.masterId, refIds: state.refIds,
+      // 图怎么处理：交给 skill 还是反推 —— 后端按这个分叉（见 routes.py）
+      image_intent: img ? (intent || "") : ""
     },
     function (ev) {
       if (ev.type === "meta") {
@@ -1391,7 +1714,7 @@ function retryNoThinking() {
     // 上一轮如果带了图，重发也得带上 —— 不然模型只能对着文字猜那张图长什么样。
     // ⚠️ 这里拿到的 image 通常是**素材名**（切过会话 / 刷过页面之后就是），所以
     // 不能用 `{data: …}` 硬包装，交给 imgArg 分辨。
-    doSend(lastUser.text, imgArg(lastUser.image));
+    doSend(lastUser.text, imgArg(lastUser.image), lastUser.image_intent || "reverse");
   }
 
   // ① 关思考 → 等落盘 → 再重发
@@ -1526,6 +1849,7 @@ function attachImage() { $("imgFile").click(); }
 
 function clearImage() {
   state.pendingImage = null;
+  state.imageIntent = null;
   renderImgStrip();
 }
 
@@ -1579,12 +1903,39 @@ function renderImgStrip() {
   if (!im) { el.hidden = true; el.innerHTML = ""; return; }
   el.hidden = false;
   // data URL 只含 [A-Za-z0-9+/=:] 和前缀，塞进属性里是安全的
+  var master = findSkill(state.masterId);
+  var canGive = !!(master && master.enabled !== false);
+  // 默认预选：当前 skill 声明吃图（reference）就默认"交给"，否则默认"反推"
+  if (!state.imageIntent) {
+    state.imageIntent = (canGive && master && master.image_mode === "reference") ? "skill" : "reverse";
+  }
+  var intent = state.imageIntent;
+  var giveLabel = master ? ("交给「" + master.name.split(" · ")[0] + "」") : "交给 skill";
   el.innerHTML = '<img class="ithumb" src="' + im.data + '" alt="待发送的图片">'
     + '<div class="imeta"><b>' + esc(im.name) + "</b>"
     + "<span>" + im.w + "×" + im.h + " · " + fmtKB(im.data.length) + "（已压缩）</span></div>"
+    + '<div class="intent">'
+    + '<span class="ilabel">这张图：</span>'
+    + '<button class="intent-b' + (intent === "reverse" ? " on" : "") + '" onclick="setImageIntent(\'reverse\')">反推成提示词</button>'
+    + '<button class="intent-b' + (intent === "skill" ? " on" : "") + (canGive ? "" : " dis") + '"'
+    + (canGive ? "" : " disabled") + ' onclick="setImageIntent(\'skill\')">' + esc(giveLabel) + "</button>"
+    + "</div>"
     + '<button class="ibtn" onclick="clearImage()" title="撤掉这张图">'
     + '<svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
     + "</button>";
+}
+
+/** 拖图弹窗里选「反推 / 交给 skill」。交给 skill 需要先有一个启用中的 skill。 */
+function setImageIntent(v) {
+  if (v === "skill") {
+    var m = findSkill(state.masterId);
+    if (!(m && m.enabled !== false)) {
+      toast("先选一个启用的 skill，才能把图交给它参考", true);
+      return;
+    }
+  }
+  state.imageIntent = v;
+  renderImgStrip();
 }
 
 function autoGrow(el) {
@@ -1596,11 +1947,14 @@ function autoGrow(el) {
 
 function renderChips() {
   var el = $("chips");
-  if (!skills.length) {
-    el.innerHTML = '<span class="chip-empty">没有 skill</span>';
+  // 禁用的 skill 不进主窗选择器 —— 禁用就是为了"少切换、眼不见"，留在芯片条里等于白禁
+  var usable = skills.filter(function (s) { return s.enabled !== false; });
+  if (!usable.length) {
+    el.innerHTML = '<span class="chip-empty">'
+      + (skills.length ? "skill 都禁用了 · 去管理里启用" : "没有 skill") + '</span>';
     return;
   }
-  el.innerHTML = skills.map(function (s) {
+  el.innerHTML = usable.map(function (s) {
     var on = state.masterId === s.id;
     var short = s.name.split(" · ")[0];
     // 名字套一层 .nm —— 窄边栏里芯片限宽 176px，靠它出省略号，不然长名字会把整条撑爆
@@ -1803,9 +2157,38 @@ function bindTitleDrag(root) {
   });
 }
 
+/** 点卡片本体切人设。禁用项点了不给切，先提示去启用 —— 卡片上的「禁用」按钮才是正路。 */
+function clickSkill(id) {
+  var s = findSkill(id);
+  if (s && s.enabled === false) {
+    toast("这个 skill 已禁用，先在卡片上点「启用」", true);
+    return;
+  }
+  setMaster(id);
+}
+
+/** 一键启用 / 禁用某个 skill。只写适配层的 enabled 字段，不碰 SKILL.md（零副本）。
+ *  off=true 表示要禁用。⚠️ 第二个参数是「目标动作」不是当前状态 ——
+ *  卡片 onclick 必须传 !dis（点禁用的 skill = 要启用 off=false）；
+ *  传成 dis 会把当前值原样存回去，开关就成了纯样子货（2026-09-24 踩过）。
+ *  禁用后该 skill 灰掉、不能再选为人设 / 参考，但列表里留着方便再开。 */
+function toggleSkillEnabled(id, off) {
+  var s = findSkill(id);
+  if (!s) return;
+  var en = !off;
+  WW.saveSkillAdapter(id, { enabled: en }).then(function () {
+    s.enabled = en;
+    // 禁用的 skill 不再进主窗选择器：如果禁的正是当前人设，refreshSkillUI 会把它
+    // 换成第一个启用中的；挂在参考里的也会被摘掉。禁用当前人设要落库，补一次持久化。
+    refreshSkillUI();
+    persistChatSettings();
+  }).catch(function (e) { toast("切换启用状态失败：" + e.message, true); });
+}
+
 function setMaster(id) {
   var s = findSkill(id);
   if (!s || state.masterId === id) return;
+  if (s.enabled === false) { toast("这个 skill 已禁用，先在 skill 管理里启用"); return; }
   state.masterId = id;
   // 参考里如果有同一个 skill，得踢掉 —— 同一个内容注入两遍纯属浪费上下文
   state.refIds = state.refIds.filter(function (r) { return r !== id; });
@@ -1822,6 +2205,8 @@ function setMaster(id) {
 
 function toggleRef(id) {
   if (id === state.masterId) { toast("这个已经是当前人设了，不用再加参考"); return; }
+  var s = findSkill(id);
+  if (s && s.enabled === false) { toast("这个 skill 已禁用，先在卡片上启用", true); return; }
   var i = state.refIds.indexOf(id);
   if (i >= 0) state.refIds.splice(i, 1); else state.refIds.push(id);
   state.lastMeta = null;
@@ -1897,9 +2282,15 @@ function renderSkills() {
 
   html += list.map(function (s) {
     var isMaster = state.masterId === s.id;
-    return '<div class="skcard' + (isMaster ? " master" : "") + '" onclick="setMaster(\'' + jsid(s.id) + '\')">'
+    var dis = s.enabled === false;
+    var eats = s.image_mode === "reference";
+    return '<div class="skcard' + (isMaster ? " master" : "") + (dis ? " disabled" : "") + '"'
+      + ' onclick="clickSkill(\'' + jsid(s.id) + '\')">'
       + '<div class="row"><span class="ico">' + svg(icons[s.icon] || icons.tag) + "</span>"
-      + '<span class="name">' + esc(s.name) + "</span></div>"
+      + '<span class="name">' + esc(s.name) + "</span>"
+      + (eats ? '<span class="badge-eat">吃图</span>' : "")
+      + (dis ? '<span class="badge-off">已禁用</span>' : "")
+      + "</div>"
       + '<div class="desc">' + esc(s.desc || s.hit || "（这个 skill 没写 description）") + "</div>"
       + '<div class="skfoot">'
       + '<span class="files">' + s.files + " 个文件"
@@ -1907,6 +2298,9 @@ function renderSkills() {
       + '<span class="grow"></span>'
       + (s.adapted ? "" : '<span class="badge-ai">无适配</span>')
       + '<button class="see" onclick="event.stopPropagation();openSkillView(\'' + jsid(s.id) + '\')">看</button>'
+      + '<button class="toggle' + (dis ? "" : " on") + '" role="switch" aria-checked="' + (!dis) + '"'
+      + ' title="启用 / 禁用这个 skill"'
+      + ' onclick="event.stopPropagation();toggleSkillEnabled(\'' + jsid(s.id) + '\',' + (!dis) + ')"></button>'
       + '<button class="see more" title="更多操作（编辑 / 复制 / 导出 / 删除）"'
       + ' onclick="event.stopPropagation();openSkMenu(event,\'' + jsid(s.id) + '\')">···</button>'
       + "</div>"
@@ -1923,7 +2317,7 @@ function renderSkills() {
   }
 
   // 附加参考：真实多选（阶段 3 会加权重/优先级，第一版就是勾了全量注入）
-  var candidates = skills.filter(function (s) { return s.id !== state.masterId; });
+  var candidates = skills.filter(function (s) { return s.id !== state.masterId && s.enabled !== false; });
   html += '<div class="refwrap">'
     + '<div class="reftitle">附加参考（多选 · 只加内容，不改输出格式）</div>'
     + (candidates.length
@@ -1951,6 +2345,7 @@ function openSkillView(id) {
   $("skvNote").textContent = "";
   $("skvBody").textContent = "读取中…";
   $("skvHint").textContent = "";
+  state.skViewBack = "skills";   // 从列表进来的：关闭时回列表，不许直接退出管理页
   openSheet("skview");
 
   WW.getSkill(id).then(function (d) {
@@ -1998,11 +2393,18 @@ function renderSkillView(d) {
 
 /* ==================================================== skill 管理（阶段 3）
  *
- * 三条能力边界，下面所有分支都由它们决定：
- *   1. **只有用户目录里的 skill 能改能删**，内置的只读
- *   2. 想改内置的 → 先「复制到我的」，在副本上改（否则插件一更新就白改）
+ * 四条能力边界，下面所有分支都由它们决定：
+ *   1. **正文和适配是两件事**（2026-09-24 拆开）：
+ *      · 正文 = SKILL.md。改它只允许**用户目录**里的 skill —— 内置的改了下次更新就白改。
+ *      · 适配 = "风语怎么用它"（显示名 / 描述 / 分类 / 图标 / 注入清单 / 剥离规则 / 说明），
+ *        落在 `user/default/WindWhisper/adapters/<id>.json`。**任何 skill 都能写，内置也行**
+ *        —— 它不碰插件目录、插件更新也冲不掉，所以"给内置 skill 做适配"**不需要复制副本**。
+ *   2. 想改内置的**正文**（翻译 / 加自己的规则）→ 先「复制一份」。这是唯一需要副本的
+ *      场景；点了会多出一份同名 skill，平时别用。
  *   3. 编辑器拿的是 **SKILL.md 原文**（未剥离），不是注入文本
  *      —— 拿注入文本回填再保存，会让内容每编辑一次少一截
+ *   4. 两个入口共用这套编辑器，靠 `state.skAdapterOnly` 分流；只有它开着，
+ *      正文框才是只读的、保存才走适配层那条路
  */
 
 var skMenuEl = null;
@@ -2018,12 +2420,26 @@ function openSkMenu(ev, id) {
   if (!s) return;
 
   var acts = [{ t: "查看注入正文（实际发给模型的那段）", f: "openSkillView('" + jsid(id) + "')" }];
-  if (s.editable) acts.push({ t: "编辑", f: "openSkillEditor('" + jsid(id) + "')" });
+
+  // ★ 主路径：改「风语怎么用它」。**不碰 SKILL.md**，所以内置 skill 也能走 ——
+  //   不需要复制副本（复制会把正文冻在复制那天，而适配层本来就是"原文不动、只加一层"）。
+  //   用户目录里的 skill 走「编辑」就顺带把适配改了，不再单列一条，免得菜单里
+  //   两个"改适配"的入口让人分不清。
+  if (s.editable) {
+    acts.push({ t: "编辑（正文 + 适配）", f: "openSkillEditor('" + jsid(id) + "')" });
+  } else {
+    acts.push({ t: "写适配（不改 skill 原文）", f: "openSkillEditor('" + jsid(id) + "',{adapterOnly:true})" });
+  }
+
+  acts.push({ t: "导出 SKILL.md 原文", f: "exportSkill('" + jsid(id) + "')" });
+
+  // 真要把内置的**正文**改掉（翻译、加自己的规则）才用它。平时别点 ——
+  // 会多出一份同名 skill，两份容易选错。
   acts.push({
-    t: s.editable ? "复制一份" : "复制到我的（内置只读，改要先复制）",
+    t: s.editable ? "复制一份（做另一个变体）" : "复制一份来改正文（会多出一份，平时别用）",
     f: "dupSkill('" + jsid(id) + "')"
   });
-  acts.push({ t: "导出 SKILL.md 原文", f: "exportSkill('" + jsid(id) + "')" });
+
   if (s.editable) acts.push({ t: "删除", f: "delSkill('" + jsid(id) + "')", danger: true });
 
   var el = document.createElement("div");
@@ -2047,12 +2463,54 @@ function openSkMenu(ev, id) {
 
 /* ------------------------------------------------------------ 编辑 / 新建 */
 
-function openSkillEditor(id) {
+/** 按当前模式摆好界面：正文能不能改、保存按钮叫什么、脚注说落盘到哪。
+ *
+ *  两个入口（编辑 / 写适配）共用这一套编辑器，用户唯一能分辨"我正在改什么"
+ *  的地方就是标题 + 说明条 + 按钮文案 —— 所以模式必须**显式**写在界面上，
+ *  不能只靠标题四个字。
+ */
+function applySkeMode() {
+  var only = state.skAdapterOnly;
+
+  var mode = $("skeMode");
+  if (mode) {
+    mode.hidden = !only;
+    if (only) {
+      mode.innerHTML = "<b>写适配模式</b>：正文来自插件内置，这里只改「风语怎么用它」——"
+        + "显示名 / 描述 / 分类 / 图标 / 注入清单 / 剥离规则 / 说明。<br>"
+        + "保存只写 <code>user/default/WindWhisper/adapters/&lt;id&gt;.json</code>，"
+        + "SKILL.md 一个字都不会动，插件更新也冲不掉。";
+    }
+  }
+
+  var body = $("skeBody");
+  body.disabled = only;
+  body.placeholder = only
+    ? "（正文只读 —— 真要改正文，用 ··· 里的「复制一份来改正文」）"
+    : "写规则：怎么理解需求 · 按什么顺序决定画面元素 · 输出什么格式 · 什么情况要反问";
+
+  var foot = $("skeFoot");
+  if (foot) {
+    foot.innerHTML = only
+      ? '只写 <code>user/default/WindWhisper/adapters/&lt;id&gt;.json</code> · SKILL.md 不会被改动'
+      : '保存会写 <code>user/default/WindWhisper/skills/&lt;id&gt;/SKILL.md</code>（同时记下这份适配）';
+  }
+
+  $("skeSave").textContent = only ? "保存适配" : "保存";
+}
+
+function openSkillEditor(id, opts) {
+  // opts.adapterOnly = 「写适配」模式：正文只读，保存只走适配层。
+  // 跟「编辑」共用同一套 UI，靠这个开关分流 —— 两个入口长得一样、只是"能改的东西"不同，
+  // 所以模式必须在界面上说清楚（见 applySkeMode 的说明条）。
+  var adapterOnly = !!(opts && opts.adapterOnly);
   var s = id ? findSkill(id) : null;
   state.skEditId = s ? s.id : null;
   state.skEditNew = !s;
+  state.skAdapterOnly = adapterOnly && !!s;
 
-  $("skeTitle").textContent = s ? ("编辑 · " + s.name) : "新建 skill";
+  $("skeTitle").textContent = !s ? "新建 skill"
+    : (state.skAdapterOnly ? "写适配 · " + s.name : "编辑 · " + s.name);
   $("skeId").value = s ? s.id : "";
   $("skeId").disabled = !!s;
   $("skeName").value = s ? s.name : "";
@@ -2061,33 +2519,56 @@ function openSkillEditor(id) {
   $("skeDesc").value = (s && s.desc) || "";
   $("skeNote").value = "";
   $("skeInject").value = "";
+  $("skeStripSec").value = "";
+  $("skeStripLine").value = "";
+  $("skeImageMode").value = "ignore";
   $("skeBody").value = "";
   $("skeIdHint").textContent = s
     ? "id 建好就不能改了（它就是目录名）"
     : "留空会自动按名字生成；只能字母数字和 _ . -";
+  state.skeBase = skeSnapshot();   // 刚填完的空壳就是基线，之后改动全靠跟它比对
+  applySkeMode();   // 先把模式相关的几处（正文能不能写 / 按钮叫什么）摆好，别等回包才变
   setSkeStatus(s ? "正在读 SKILL.md 原文…" : "填完点保存，会写进 user/default/WindWhisper/skills/", s ? "busy" : "");
   openSheet("skedit");
 
   if (!s) { $("skeBody").focus(); return; }
 
   WW.exportSkill(s.id).then(function (d) {
-    $("skeName").value = d.name || s.name;
-    $("skeDesc").value = d.desc || "";
-    $("skeCat").value = d.category || "";
-    $("skeIcon").value = d.icon || "tag";
-    $("skeNote").value = d.note || "";
-    $("skeInject").value = (d.inject_extra || []).join("\n");
-    $("skeBody").value = d.body || "";
-    setSkeStatus("原文 " + (d.body || "").length.toLocaleString() + " 字"
-      + (d.editable ? "" : "（只读副本，保存会失败 —— 先「复制到我的」）"), d.editable ? "" : "err");
-    if (!d.editable) {
-      $("skeSave").disabled = true;
-      $("skeSave").textContent = "内置只读";
+    try {
+      $("skeName").value = d.name || s.name;
+      $("skeDesc").value = d.desc || "";
+      $("skeCat").value = d.category || "";
+      $("skeIcon").value = d.icon || "tag";
+      $("skeNote").value = d.note || "";
+      $("skeInject").value = (d.inject_extra || []).join("\n");
+      $("skeStripSec").value = (d.strip_sections || []).join("\n");
+      $("skeStripLine").value = (d.strip_lines || []).join("\n");
+      $("skeImageMode").value = d.image_mode || "ignore";
+      $("skeBody").value = d.body || "";
+    } finally {
+      // 原文回填完才重拍基线 —— 不然读盘的异步间隙会被当成"改过"。
+      // 放 finally：就算回填中途出错，基线也对齐当前 DOM，不拿旧基线冤枉人。
+      state.skeBase = skeSnapshot();
+    }
+
+    // 能不能保存，看走的是哪条路：自己的 skill 走「编辑」（正文 + 适配），
+    // 内置的走「写适配」（只写适配层）。内置的**正文**始终不能改 —— 它是插件的
+    // 一部分，改了下次更新就白改；要改正文得显式「复制一份」。
+    var canSave = d.editable || state.skAdapterOnly;
+    $("skeSave").disabled = !canSave;
+    if (canSave) applySkeMode();
+    else $("skeSave").textContent = "内置只读";
+
+    var n = (d.body || "").length.toLocaleString();
+    if (state.skAdapterOnly) {
+      setSkeStatus("正文 " + n + " 字 —— 只读。改完点「保存适配」：只写适配层，SKILL.md 一个字都不会动。", "");
+    } else if (!d.editable) {
+      setSkeStatus("正文 " + n + " 字（内置只读，直接保存会失败 —— 请用「写适配」）", "err");
     } else {
-      $("skeSave").disabled = false;
-      $("skeSave").textContent = "保存";
+      setSkeStatus("正文 " + n + " 字", "");
     }
   }).catch(function (e) {
+    state.skeBase = skeSnapshot();   // 读原文失败：基线对齐现状，别让用户啥都没干也被提示"未保存"
     setSkeStatus("读不到原文：" + e.message, "err");
   });
 }
@@ -2098,6 +2579,30 @@ function setSkeStatus(msg, kind) {
   el.textContent = msg;
 }
 
+/* 编辑器脏检测：打开时把所有字段拍个快照（skeBase），关闭前再拍一张比对。
+ * 有差异 = 有未保存的修改，得问一嘴再丢，别让手滑把写的东西全弄没了。 */
+var SKE_FIELDS = ["skeName", "skeCat", "skeIcon", "skeDesc", "skeNote", "skeInject",
+                  "skeStripSec", "skeStripLine", "skeImageMode", "skeBody"];
+function skeSnapshot() {
+  return SKE_FIELDS.map(function (i) { return $(i).value; }).join("\u0001");
+}
+function skeDirty() { return state.skeBase != null && skeSnapshot() !== state.skeBase; }
+
+/** 关编辑器（X / 取消 / 点遮罩 / Esc 全走这儿）：有未保存的修改先确认；
+ *  确认丢弃后回 skill 列表 —— 编辑器只从列表进来，不存在"关到对话"的路。 */
+function closeSkillEdit() {
+  if (skeDirty() && !confirm("编辑器里有未保存的修改，确定丢弃吗？")) return;
+  state.skeBase = null;
+  backToSkills();
+}
+
+/** textarea → 干净的数组。剥离规则那两格是"每行一条"，空行直接丢掉。 */
+function parseLines(v) {
+  return String(v == null ? "" : v).split("\n")
+    .map(function (x) { return x.trim(); })
+    .filter(function (x) { return !!x; });
+}
+
 function saveSkillEdit() {
   var fields = {
     name: $("skeName").value.trim(),
@@ -2105,28 +2610,57 @@ function saveSkillEdit() {
     icon: $("skeIcon").value,
     desc: $("skeDesc").value.trim(),
     note: $("skeNote").value.trim(),
-    inject_extra: $("skeInject").value.split("\n").map(function (x) { return x.trim(); })
-      .filter(function (x) { return !!x; }),
+    inject_extra: parseLines($("skeInject").value),
+    strip_sections: parseLines($("skeStripSec").value),
+    strip_lines: parseLines($("skeStripLine").value),
+    image_mode: $("skeImageMode").value,
     content: $("skeBody").value
   };
   if (!fields.name) { setSkeStatus("名字不能空", "err"); return; }
-  if (!fields.content.trim()) { setSkeStatus("正文不能空 —— 那才是发给模型的东西", "err"); return; }
+
+  // 「写适配」模式里正文是只读的：既不校验它，也不把它发上去（发上去后端也不会用）
+  if (!state.skAdapterOnly && !fields.content.trim()) {
+    setSkeStatus("正文不能空 —— 那才是发给模型的东西", "err");
+    return;
+  }
 
   var p;
   if (state.skEditNew) {
     fields.id = $("skeId").value.trim();
     p = WW.createSkill(fields);
+  } else if (state.skAdapterOnly) {
+    delete fields.content;
+    p = WW.saveSkillAdapter(state.skEditId, fields);
   } else {
     p = WW.saveSkill(state.skEditId, fields);
   }
 
   p.then(function (sk) {
-    setSkeStatus("✓ 已保存到 " + sk.path, "ok");
-    toast("「" + sk.name + "」保存好了");
-    state.skEditId = sk.id;
-    state.skEditNew = false;
-    $("skeId").value = sk.id;
-    $("skeId").disabled = true;
+    if (state.skAdapterOnly) {
+      // 把"剥掉了什么"当场说出来 —— 规则填错了得能看出来，否则只能靠猜
+      var extra = [];
+      if (sk.stripped && sk.stripped.length) extra.push("已剥掉章节：" + sk.stripped.join("、"));
+      if (sk.dropped_lines) extra.push("已剥掉 " + sk.dropped_lines + " 行");
+      if (!sk.adapted) {
+        // 全清空保存 = 撤掉所有覆盖。save_adapter 会把空文件删掉，不用另做「删适配」
+        setSkeStatus("✓ 覆盖都清空了 —— 这个 skill 回到「跟正文 / 内置走」的原始状态", "ok");
+        toast("「" + sk.name + "」的适配已清空");
+      } else {
+        setSkeStatus("✓ 适配已保存（SKILL.md 没动）"
+          + (extra.length ? " · " + extra.join(" · ") : "")
+          + " · 现在注入 " + fmtKB(sk.inject_bytes), "ok");
+        toast("「" + sk.name + "」适配好了 —— 原文一个字没动"
+          + (extra.length ? "，" + extra[0] : ""));
+      }
+    } else {
+      setSkeStatus("✓ 已保存到 " + sk.path, "ok");
+      toast("「" + sk.name + "」保存好了");
+      state.skEditId = sk.id;
+      state.skEditNew = false;
+      $("skeId").value = sk.id;
+      $("skeId").disabled = true;
+    }
+    state.skeBase = skeSnapshot();   // 刚保存进盘的内容就是新基线 —— 不重拍的话"保存后关闭"会被当成有未保存修改
     return loadSkills();
   }).catch(function (e) {
     setSkeStatus("✗ " + e.message, "err");
@@ -2853,7 +3387,10 @@ function jumpToPushed() {
 
 /* -------------------------------------------------------------- 弹层开关 */
 
+var curSheet = null;   // 当前开着的弹层 id，遮罩点击 / Esc 分流用
+
 function openSheet(which) {
+  curSheet = which;
   $("mask").classList.add("open");
   $("sheetSkills").classList.toggle("open", which === "skills");
   $("sheetSkEdit").classList.toggle("open", which === "skedit");
@@ -2865,12 +3402,30 @@ function openSheet(which) {
 }
 
 function closeSheet() {
+  curSheet = null;
   $("mask").classList.remove("open");
   closeSkMenu();
+  closeModelMenu();   // 模型清单是挂在 body 上的浮层，弹层关了它不会自己走
+}
+
+/** 遮罩点击 / Esc 的统一出口。编辑器和详情页不直接全关：
+ *  编辑器有未保存修改要先问，详情页要从列表进来时回列表（别把整个管理页带走）。 */
+function maskClose() {
+  if (curSheet === "skedit") { closeSkillEdit(); return; }
+  if (curSheet === "skview") { closeSkillView(); return; }
+  closeSheet();
 }
 
 /** 关掉所有弹层 —— 从编辑器/导入层「返回」到 skill 列表用。 */
 function backToSkills() { openSheet("skills"); }
+
+/** 关掉 skill 详情页。按来源分流：
+ *  从 skill 列表（「看」/ ···菜单）进来的 → 回列表，不许把整个管理页带走；
+ *  聊天里预览 System Prompt 进来的 → 下面没有列表，直接收掉回对话。 */
+function closeSkillView() {
+  if (state.skViewBack === "skills") { state.skViewBack = null; backToSkills(); }
+  else closeSheet();
+}
 
 /* ------------------------------------------------------------------ 杂项 */
 
@@ -2961,7 +3516,10 @@ document.addEventListener("keydown", function (ev) {
   if (ev.key !== "Escape") return;
   if (msgMenuEl) { closeMsgMenu(); return; }        // 消息菜单最小，最先关
   if (skMenuEl) { closeSkMenu(); return; }          // 小菜单优先关，别一把关掉整层
-  if ($("mask").classList.contains("open")) { closeSheet(); return; }
+  // 模型浮层：展开时焦点在它自己的搜索框里，Esc 从那儿派发 —— 走不到 #cfgModel 的
+  // onkeydown。必须在这儿先拦一道，否则焦点在搜索框时按 Esc 会把**整个设置面板**关掉。
+  if (modelMenuEl) { closeModelMenu(); return; }
+  if ($("mask").classList.contains("open")) { maskClose(); return; }
   if ($("drawer").classList.contains("open")) { toggleDrawer(); return; }
   closePanel();
 });

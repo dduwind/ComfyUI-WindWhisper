@@ -15,6 +15,7 @@
 
     {
       "name":     "万能提示词生成",         显示名（覆盖 frontmatter.name）
+      "desc":     "一句话简介",             列表里那句话（覆盖 frontmatter.description）
       "category": "通用",                  分类（UI 左栏）
       "icon":     "tag",                   图标 key（见面板 app.js 的 icons）
       "inject":   ["SKILL.md", "core/*.md"],   注入哪些文件，默认 ["SKILL.md"]
@@ -23,12 +24,25 @@
       "_note":    "脚本章节已剥离"           UI 上展示的适配说明
     }
 
+**两条写路径，别混**（2026-09-24 拆开）：
+
+    save(sid, fields)               改**正文**（只允许用户目录里的 skill）+ 顺手写适配
+    save_adapter_only(sid, fields)  只写适配层，**一行都不碰 SKILL.md**
+
+第二条是**故意**对内置 skill 开放的：落点永远是用户目录的 `adapters/<id>.json`，
+插件目录一个字节都不动，插件更新也冲不掉它。所以「给内置 skill 做适配」根本
+不需要复制副本 —— 复制会把正文冻在复制那一天，而适配层本来就是"原文不动、只加一层"。
+面板上对应的入口叫「写适配（不改 skill 原文）」。这个区别对面板那侧有个直接后果：
+**改正文和改适配是两件事，保存按钮与回读内容都不同**，别做成一个按钮。
+
 适配层也是**两层**（2026-09-22 加）：`<插件>/adapters/` 是内置的（随插件更新走，只读），
 `user/default/WindWhisper/adapters/` 是你在面板里改出来的，**按 key 覆盖内置**。
 这样"只改分类"不会把内置那套剥离规则一起抹掉。
 
-面板里的增删改有一条硬规则：**只有用户目录里的 skill 能改能删**。
-内置的只读 —— 想改先「复制到我的」，在副本上改，否则插件一更新就白改。
+面板里"改**正文**"有一条硬规则：**只有用户目录里的 skill 能改能删**。内置的正文只读，
+真要改就先复制一份（否则插件一更新就白改）。
+但**适配**不受这条限制 —— 它落在用户目录的 `adapters/` 里、按 id 覆盖内置，任何 skill
+都能写。所以"给内置 skill 做适配"用面板上的「写适配」就行，**不需要副本**。
 
 为什么需要 strip_sections：WorkBuddy 里的 skill 是给「能执行命令的 AI」写的，
 SKILL.md 里常有 venv 路径、pip install 之类的操作说明。WindWhisper 的模型
@@ -381,6 +395,11 @@ def _describe(skill_path, sid, source):
         # 分类 / 图标：适配层优先，其次 frontmatter（用户自建的 skill 没有适配层），最后兜底
         "category": str(adapter.get("category") or fm.get("category") or "未分类"),
         "icon": str(adapter.get("icon") or fm.get("icon") or "tag"),
+        # 图片处理模式：ignore（默认，不吃图）/ reverse（反推）/ reference（交给 skill 参考）。
+        # 决定前端拖图弹窗的默认预选；适配层覆盖优先于 frontmatter。
+        "image_mode": str(adapter.get("image_mode") or fm.get("image_mode") or "ignore"),
+        # 启用 / 禁用：默认启用；禁用后前端灰掉且不可选为人设 / 参考。
+        "enabled": bool(adapter["enabled"]) if adapter.get("enabled") is not None else True,
         "files": files,
         "bytes": nbytes,
         "refs": _list_refs(skill_path),
@@ -488,9 +507,13 @@ def load(sid):
 
 # ================================================================== 面板内增删改
 #
-# 一条铁律：**只有落在用户目录里的 skill 能改能删**。
-# 内置的（随插件更新走的）一律只读 —— 想改就先「复制到我的」，在副本上改。
+# 一条铁律：**只有落在用户目录里的 skill 能改能删**（说的是**正文**）。
+# 内置的（随插件更新走的）正文一律只读 —— 想改就先复制一份。
 # 否则你辛苦改的东西会被下一次插件更新原样覆盖掉，而且极难反应过来是为什么。
+#
+# ⚠️ 但**适配层**是另一条边界：save_adapter_only() 对**任何** skill 开放，
+# 因为它只写 user/default/WindWhisper/adapters/<id>.json，碰不到插件目录。
+# 两条边界别混 —— 混成一个的结果必然是"要么不能适配、要么能悄悄改正文"。
 
 # 面板里可选的图标 key（必须和 app.js 的 icons 表对上）
 ICON_KEYS = ("tag", "brush", "camera", "film", "play", "box", "user")
@@ -568,9 +591,46 @@ def _compose_inject(extra):
     return out
 
 
-def _adapter_patch(fields, existing=None):
-    """把面板传来的字段翻译成适配层 patch。没填的键不写，保持跟内置一致。"""
+def _clean_list(value):
+    """把面板传来的多行文本 / 数组统一成干净的去重列表。空 → []。
+
+    textarea 是换行分隔、接口也可能直接给数组，两种都收；
+    顺手做**大小写无关**的去重（"Pip Install" 和 "pip install" 是同一条规则）。
+    """
+    if isinstance(value, str):
+        items = value.split("\n")
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        items = []
+    out, seen = [], set()
+    for it in items:
+        s = str(it or "").strip()
+        k = s.lower()
+        if s and k not in seen:
+            seen.add(k)
+            out.append(s)
+    return out
+
+
+def _adapter_patch(fields, text_keys=False):
+    """把面板传来的字段翻译成适配层 patch。没填的键不写，保持跟内置一致。
+
+    ⚠️ 值为 None / "" / [] 的键在 `save_adapter` 里会被**删掉**，语义是
+    "这条不留覆盖、跟正文或内置走"。所以**清空输入框再保存 = 撤掉那条覆盖**，
+    不需要另做一个「删适配」按钮。
+
+    text_keys：是否允许把**显示名 / 描述**写进适配层。默认 False —— 普通保存走
+    `save()`，这两个值属于正文 frontmatter，让正文当唯一来源，免得出现
+    "改了名字却没变"（适配层优先级更高）。只有"只写适配"那条路径
+    （`save_adapter_only`）才打开它，因为那时正文是只读的。
+    """
     patch = {}
+    if text_keys:
+        if "name" in fields:
+            patch["name"] = str(fields.get("name") or "").strip()
+        if "desc" in fields:
+            patch["desc"] = str(fields.get("desc") or "").strip()
     if "category" in fields:
         patch["category"] = str(fields.get("category") or "").strip()
     if "icon" in fields:
@@ -581,7 +641,51 @@ def _adapter_patch(fields, existing=None):
     if "inject_extra" in fields:
         inj = _compose_inject(fields.get("inject_extra"))
         patch["inject"] = inj if inj != ["SKILL.md"] else None
+    if "strip_sections" in fields:
+        patch["strip_sections"] = _clean_list(fields.get("strip_sections")) or None
+    if "strip_lines" in fields:
+        patch["strip_lines"] = _clean_list(fields.get("strip_lines")) or None
+    # 启用/禁用开关：只写适配层的 enabled 字段，不碰 SKILL.md（零副本）。
+    # 注意：空串 / None 表示「撤掉覆盖」（回到默认启用），不能写成 False 留脏键；
+    # 只有真正的布尔值才写入（False = 禁用，True = 启用）。
+    if "enabled" in fields:
+        ev = fields.get("enabled")
+        patch["enabled"] = None if ev in (None, "") else bool(ev)
+    # 图片处理模式：ignore（默认不收图）/ reverse（反推成提示词）/ reference（交给 skill 多模态参考）。
+    # 非法值一律变 None = 撤掉覆盖，回到默认 ignore，避免脏数据卡死。
+    if "image_mode" in fields:
+        m = str(fields.get("image_mode") or "").strip().lower()
+        patch["image_mode"] = m if m in ("ignore", "reverse", "reference") else None
     return patch
+
+
+def save_adapter_only(sid, fields):
+    """**只写适配层**，一行都不碰 SKILL.md。返回 (结果, 错误)。
+
+    与 `save()` 的权限边界不同，这里是**故意**对内置 skill 开放的：
+    落点永远是 `user/default/WindWhisper/adapters/<id>.json`，而 `load_adapter`
+    是「内置 → 用户覆盖」两层叠 —— 写一份以**内置 id** 命名的用户适配，不改
+    插件目录的任何东西，插件更新也冲不掉它。
+
+    这正是适配层的设计初衷（见模块顶部："绝不改动 skill 原文件"），也是
+    "给内置 skill 做适配不用复制副本"的依据。复制副本会把正文冻在复制那天。
+
+    ⚠️ 这里**不许**出现任何写 SKILL.md 的动作。静态检查里有一条断言专门钉它，
+    因为这条路径一旦写正文，就等于给"内置只读"开了个后门。
+    """
+    if not _valid_new_id(sid):
+        return None, "非法 id"
+    src, _source = find(sid)
+    if not src:
+        return None, "找不到这个 skill"
+
+    patch = _adapter_patch(fields, text_keys=True)
+    if not patch:
+        # 一个可改的键都没传 —— 什么都不写，直接回读现状（不做无意义的落盘）
+        return load(sid), None
+
+    save_adapter(sid, patch)
+    return load(sid), None
 
 
 def create(fields):
@@ -630,7 +734,8 @@ def save(sid, fields):
         return None, "拿不到用户目录"
     dest = os.path.join(ud, sid)
     if not os.path.isfile(os.path.join(dest, "SKILL.md")):
-        return None, "只能改「我的」skill。这个在插件内置目录里，先点「复制到我的」"
+        return None, ("只能改「我的」skill 的正文。这个是插件内置的 —— 想改它在风语里怎么用，"
+                      "请用「写适配」（不动原文）；真要改正文，先「复制一份来改正文」")
 
     md_path = os.path.join(dest, "SKILL.md")
     try:
@@ -654,7 +759,12 @@ def save(sid, fields):
     except OSError as exc:
         return None, "写文件失败：%s" % exc
 
+    # 正文刚被改写（包含 name / desc），而适配层那两个键**优先级更高** ——
+    # 不清掉的话会出现"改了自己的 skill 名字、列表里还是老名字"这种要查半天的怪事。
+    # 用户目录的 skill 一律以正文为准，所以这里显式撤掉适配层的 name / desc 覆盖。
     patch = _adapter_patch(fields)
+    patch["name"] = None
+    patch["desc"] = None
     if patch:
         save_adapter(sid, patch)
     return load(sid), None
@@ -689,7 +799,9 @@ def delete(sid):
 def duplicate(sid, new_id=None, new_name=None):
     """把任意 skill 复制一份到用户目录。返回 (结果, 错误)。
 
-    这是改内置 skill 的正规路径：内置只读 → 复制到我的 → 在副本上随便改。
+    这是改内置 skill **正文**的唯一路径（平时用不上 —— 只是想换个显示名 / 分类 /
+    剥掉几节命令说明的话，用「写适配」就够了，那个不动原文、也跟得上插件更新）。
+    注意副本的正文会**冻在复制那一天**，上游以后改了不会跟过来。
     复制时会把**已经解析好的适配**（分类 / 图标 / 剥离规则 / 注入清单）
     一并写到副本的用户适配里，否则副本会丢掉分类和剥离规则、行为跟原件不一样。
     """
@@ -760,6 +872,11 @@ def edit_payload(sid):
     SKILL.md 就被写成了剥离版；而适配规则下次还会再剥一遍 ——
     **内容会每编辑一次少一截，且不可逆**。这是这套适配层最危险的一个坑，
     所以专门开这个函数，并且注释写死。
+
+    面板两个入口都吃这一份 payload，靠前端决定正文框是否可写：
+
+        「编辑」        → 保存走 save()（写正文 + 适配）
+        「写适配」      → 保存走 save_adapter_only()（正文只读，只写适配层）
     """
     src, source = find(sid)
     if not src:
@@ -781,11 +898,20 @@ def edit_payload(sid):
     return {
         "id": sid,
         "name": str(adapter.get("name") or fm.get("name") or sid),
-        "desc": re.sub(r"\s+", " ", str(fm.get("description") or "")).strip(),
+        # desc 必须**适配层优先**，跟 _describe() 一个口径。只读 frontmatter 的话，
+        # 适配层改过描述时编辑器会回填出旧值，一保存就把"只写适配"改的那句话冲掉。
+        "desc": re.sub(r"\s+", " ", str(adapter.get("desc") or fm.get("description") or "")).strip(),
         "category": str(adapter.get("category") or fm.get("category") or ""),
         "icon": str(adapter.get("icon") or fm.get("icon") or "tag"),
+        "image_mode": str(adapter.get("image_mode") or fm.get("image_mode") or "ignore"),
+        "enabled": bool(adapter.get("enabled")) if adapter.get("enabled") is not None else True,
         "note": str(adapter.get("_note") or ""),
         "inject_extra": [p for p in inject if p != "SKILL.md"],
+        # 剥离规则要回填，否则编辑器里那两格永远是空的 —— 用户一保存就把
+        # 手写的（或上一次填的）规则悄悄抹掉，而且看不出来。
+        "strip_sections": list(adapter.get("strip_sections") or []),
+        "strip_lines": list(adapter.get("strip_lines") or []),
+        "adapted": bool(adapter),
         "body": body,
         "raw": raw,
         "editable": editable,

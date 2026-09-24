@@ -4,7 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🍃 风语 · 提示词搭子</title>
-<link rel="stylesheet" href="style.css">
+<!-- ★ 资源版本号：改 web/ 下任何文件都要 +1，三处必须一致：
+       ① 这里的 ?v=  ② 底部 <script> 的 ?v=  ③ windwhisper.js 的 PANEL_VER
+     （底部那行小字也印着它，用户念一句我就知道他那份是不是新的）
+     为什么要它：用户"改了看不见"多半是缓存 —— 数字一变 URL 就变，必然重新拉。 -->
+<link rel="stylesheet" href="style.css?v=20260924j">
 </head>
 <body>
 
@@ -86,7 +90,7 @@
   </button>
 </div>
 
-<div class="mask" id="mask" onclick="if(event.target===this)closeSheet()">
+<div class="mask" id="mask" onclick="if(event.target===this)maskClose()">
 
   <div class="sheet skills" id="sheetSkills">
     <div class="sheet-head">
@@ -186,7 +190,7 @@
       <h2 id="skvName">Skill</h2>
       <span class="tagpill" id="skvCat"></span>
       <span class="grow"></span>
-      <button class="ibtn" onclick="closeSheet()" title="关闭">
+      <button class="ibtn" onclick="closeSkillView()" title="关闭">
         <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -197,7 +201,7 @@
     </div>
     <div class="sheet-foot">
       <span class="hint" id="skvHint">这是实际会发给模型的内容</span>
-      <button class="tbtn on" onclick="closeSheet()">关闭</button>
+      <button class="tbtn on" onclick="closeSkillView()">关闭</button>
     </div>
   </div>
 
@@ -206,12 +210,13 @@
     <div class="sheet-head">
       <h2 id="skeTitle">编辑 skill</h2>
       <span class="grow"></span>
-      <button class="tbtn" onclick="backToSkills()">← 回到 skill 列表</button>
-      <button class="ibtn" onclick="closeSheet()" title="关闭">
+      <button class="ibtn" onclick="closeSkillEdit()" title="关闭并回到 skill 列表">
         <svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="cfg-body">
+      <!-- 「写适配」模式下的说明条：讲清这次保存**不会**动 SKILL.md -->
+      <div class="sbanner" id="skeMode" hidden></div>
       <div class="field-row">
         <div class="field">
           <label>id（就是目录名）</label>
@@ -254,22 +259,41 @@
       </div>
 
       <details class="adv">
-        <summary>高级：额外注入文件 / 适配说明</summary>
+        <summary>高级：注入清单 / 剥离规则 / 适配说明</summary>
         <div class="field">
           <label>额外注入文件（每行一个 glob，相对 skill 目录；不填就只注入 SKILL.md）</label>
           <textarea id="skeInject" rows="2" placeholder="references/*.md"></textarea>
         </div>
         <div class="field">
+          <label>剥离章节（每行一个关键词，标题里含它就整节不要）</label>
+          <textarea id="skeStripSec" rows="2" placeholder="运行须知"></textarea>
+          <div class="fhint">给「能执行命令的 AI」写的那种章节（venv / pip / 脚本步骤）填这儿 —— 风语的模型没有工具可调，读到会开始编「我来运行一下脚本」。</div>
+        </div>
+        <div class="field">
+          <label>删除行（每行一个关键词，命中就删掉那一整行）</label>
+          <textarea id="skeStripLine" rows="2" placeholder="pip install"></textarea>
+          <div class="fhint">比剥章节更细：同一张表里只有个别行是操作说明、其余是语义规则时，用这个。</div>
+        </div>
+        <div class="field">
           <label>适配说明（只在面板里显示，不会发给模型）</label>
           <input id="skeNote" placeholder="如：脚本章节已剥离">
+        </div>
+        <div class="field">
+          <label>图片处理模式（拖图时弹窗的默认预选）</label>
+          <select id="skeImageMode">
+            <option value="ignore">不吃图（拖图走反推，默认）</option>
+            <option value="reverse">反推这张图</option>
+            <option value="reference">交给此 skill 参考（多模态，出文字）</option>
+          </select>
+          <div class="fhint">设成「交给此 skill 参考」后，拖图弹窗默认高亮"交给 skill"；前端拖图时仍可手动改回反推。</div>
         </div>
       </details>
 
       <div class="cfg-status" id="skeStatus">还没保存</div>
     </div>
     <div class="sheet-foot">
-      <span class="hint">写进 <code>user/default/WindWhisper/skills/&lt;id&gt;/SKILL.md</code> · 内置 skill 只读，想改先「复制到我的」</span>
-      <button class="tbtn" onclick="closeSheet()">取消</button>
+      <span class="hint" id="skeFoot">保存会写 <code>user/default/WindWhisper/skills/&lt;id&gt;/SKILL.md</code></span>
+      <button class="tbtn" onclick="closeSkillEdit()">取消</button>
       <button class="tbtn on" id="skeSave" onclick="saveSkillEdit()">保存</button>
     </div>
   </div>
@@ -341,6 +365,7 @@
       <div class="addpreset" id="addPreset" hidden>
         <input id="apName" placeholder="名称（可留空，自动取域名）">
         <input id="apUrl" placeholder="https://api.openai.com/v1">
+        <input id="apModel" placeholder="模型（可留空，用一次就自动记住）">
         <button class="tbtn on" onclick="addBasePreset()">加进去</button>
         <button class="tbtn" onclick="toggleAddPreset(false)">取消</button>
       </div>
@@ -355,13 +380,19 @@
         <input id="cfgKey" type="password" placeholder="本地 llama.cpp / Ollama 不用填；OpenAI 这类云端服务必须填">
       </div>
 
+      <!-- ⚠️ 这里**故意不用** <datalist>：原生候选会拿输入框里现有的文字去过滤，
+           切服务之后框里还留着上一个服务的模型名，候选一条都对不上 → 看着就是
+           「拉了但没出来」。改成自绘浮层（openModelMenu），过滤只由显式搜索框决定。 -->
       <div class="field">
         <label>模型</label>
-        <div class="row-inline">
-          <input id="cfgModel" list="cfgModels" placeholder="点右边「拉取列表」选一个，也可以手填">
-          <datalist id="cfgModels"></datalist>
-          <button class="tbtn" onclick="pullModels()">拉取列表</button>
+        <div class="combo" id="cfgModelBox">
+          <input id="cfgModel" placeholder="点右侧箭头拉取并挑选，也可以手填"
+                 autocomplete="off" spellcheck="false"
+                 oninput="onModelInput()" onkeydown="onModelKey(event)">
+          <button type="button" class="cbx" id="cfgModelClear" onclick="clearModel()" title="清空" hidden><svg class="ic sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <button type="button" class="cbar" id="cfgModelPick" onclick="toggleModelMenu()" title="展开模型列表（没拉过会先拉一次）"><svg class="ic sm" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
         </div>
+        <div class="fhint" id="modelHint">切换服务时地址 / Key / 模型会整套跟着换。点右侧箭头拉取并挑选。</div>
       </div>
 
       <div class="grid3">
@@ -409,6 +440,9 @@
     </div>
     <div class="sheet-foot">
       <span class="hint">配置存在 <code id="cfgPath">user/default/WindWhisper/config.json</code></span>
+      <!-- 面板资源版本，跟上面两处 ?v= 和 windwhisper.js 的 PANEL_VER 同一个值。
+           作用：用户报"改了看不见"时，让他念这一行就能立刻分清是缓存还是代码。 -->
+      <span class="hint webver" id="webVer" title="面板资源版本（改 web/ 时会 +1）">web v20260924j</span>
       <button class="tbtn" onclick="testBackend()">测试连接</button>
       <button class="tbtn on" onclick="saveSettings()">保存</button>
     </div>
@@ -446,7 +480,7 @@
 <div class="toasts" id="toasts"></div>
 
 <!-- api.js 必须在前 —— app.js 直接用全局 WW。两个都是普通脚本，不能用 module -->
-<script src="api.js"></script>
-<script src="app.js"></script>
+<script src="api.js?v=20260924j"></script>
+<script src="app.js?v=20260924j"></script>
 </body>
 </html>

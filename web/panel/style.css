@@ -316,6 +316,17 @@ body.dark .msg.me .bubble{color:#141414}
 .imgstrip .imeta{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
 .imgstrip .imeta b{font-size:12px;font-weight:500;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .imgstrip .imeta span{font-size:10.5px;color:var(--fg3)}
+/* 拖图弹窗里的「反推 / 交给 skill」意图选择：两个 pill 按钮，选中的那颗高亮 */
+.imgstrip .intent{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.imgstrip .ilabel{font-size:11px;color:var(--fg2);white-space:nowrap}
+.imgstrip .intent-b{
+  display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:13px;
+  border:1px solid var(--line2);background:var(--sunken);color:var(--fg3);
+  font-size:11.5px;font-family:inherit;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.imgstrip .intent-b:hover{border-color:var(--line);color:var(--fg2)}
+.imgstrip .intent-b.on{background:var(--brand-weak);border-color:var(--brand-line);color:var(--brand-weak-fg)}
+.imgstrip .intent-b.dis{opacity:.4;cursor:not-allowed}
 /* 用户气泡上方那张图：平时小图，鼠标停上去放大看清楚 —— 靠 CSS，不加 JS */
 .ubimg{margin-bottom:6px;max-width:min(240px,100%)}
 .ubimg img{
@@ -444,6 +455,34 @@ body.dark .msg.me .bubble{color:#141414}
   height:18px;padding:0 6px;border-radius:4px;background:var(--warn-bg);border:1px solid var(--warn-line);
   color:var(--warn-fg);font-size:9.5px;display:inline-flex;align-items:center;white-space:nowrap;
 }
+/* 吃图标记：声明了 reference 的 skill，拖图弹窗默认会高亮"交给 skill" */
+.skcard .badge-eat{
+  height:18px;padding:0 6px;border-radius:4px;background:var(--brand-weak);border:1px solid var(--brand-line);
+  color:var(--brand-weak-fg);font-size:9.5px;display:inline-flex;align-items:center;white-space:nowrap;
+}
+/* 已禁用标记 */
+.skcard .badge-off{
+  height:18px;padding:0 6px;border-radius:4px;background:var(--sunken);border:1px solid var(--line2);
+  color:var(--fg3);font-size:9.5px;display:inline-flex;align-items:center;white-space:nowrap;
+}
+/* 禁用的 skill：整体压暗、不可选人设（点卡片不切），只在卡片上留"启用"按钮 */
+.skcard.disabled{opacity:.5;filter:grayscale(.4);cursor:not-allowed}
+.skcard.disabled:hover{transform:none;box-shadow:none;border-color:var(--line)}
+/* 启用 / 禁用：胶囊滑块开关
+ * 启用（.on）= 绿色圆圈在胶囊左边；禁用（默认）= 灰色圆圈在胶囊右边。
+ * 纯视觉控件，不弹窗，圆圈左右滑动即反馈。 */
+.skcard .toggle{
+  position:relative;flex:0 0 auto;width:36px;height:20px;padding:0;border:1px solid var(--line2);
+  border-radius:999px;background:var(--sunken);cursor:pointer;
+  -webkit-appearance:none;appearance:none;transition:background .2s,border-color .2s;
+}
+.skcard .toggle::after{
+  content:"";position:absolute;top:2px;left:18px;width:14px;height:14px;border-radius:50%;
+  background:#9aa0a6;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .2s,background .2s;
+}
+.skcard .toggle:hover{border-color:var(--line)}
+.skcard .toggle.on{background:rgba(34,197,94,.20);border-color:rgba(34,197,94,.55)}
+.skcard .toggle.on::after{left:2px;background:#22c55e}
 .skcard.master .ico{background:var(--brand-grad);color:#fff}
 body.dark .skcard.master .ico{color:#141414}
 .flag{
@@ -527,6 +566,33 @@ body.dark .skcard.master .ico{color:#141414}
   color:var(--fg);font-family:inherit;font-size:12px;padding:0 11px;outline:none;transition:.15s;
 }
 .field input:focus{border-color:var(--brand);background:var(--card);box-shadow:0 0 0 3px var(--brand-weak)}
+
+/* 模型框 = 标准 combobox：输入框**内部**右侧一个清空 ×、一个下拉箭头。
+ * 不在旁边另挂按钮 —— 「拉取」藏在箭头里（没拉过就先拉一次），
+ * 「刷新」放清单底部一行。主界面就这么干净。
+ *
+ * ⚠️ 选择器必须带 `.field` 前缀。设置面板表单区有个 `.cfg-body input{padding:0 10px}`，
+ *    它和 `.combo input` **同权重**（0,1,1）却写在后面 → 实测把 padding-right 压回 10px，
+ *    文字一直排到图标底下（真机探针查出来的）。多一层类就够（0,2,1 > 0,1,1），别用 !important。 */
+.field .combo{position:relative;display:block}
+.field .combo input{width:100%;padding-right:60px}
+.cbx,.cbar{
+  position:absolute;top:50%;transform:translateY(-50%);display:grid;place-items:center;
+  padding:0;border:0;border-radius:6px;background:transparent;
+  color:var(--fg2);cursor:pointer;transition:.12s;
+}
+.cbx{right:34px;width:22px;height:22px}
+.cbx:hover{background:var(--hover);color:var(--fg)}
+/* ⚠️ 必须补这条：上面 .cbx 的 display:grid 是作者样式，会盖掉 hidden 自带的
+ *    UA 样式 display:none —— 不写它，那个 × 永远藏不住（.addpreset 踩过同一个坑） */
+.cbx[hidden]{display:none}
+.cbar{right:4px;width:28px;height:28px;border-left:1px solid var(--line2);border-radius:0 6px 6px 0}
+.cbar:hover{background:var(--hover);color:var(--fg)}
+/* 图标本身比别处大一档：它是这个框唯一的功能入口，含糊了就等于没有 */
+.cbx .ic,.cbar .ic{width:15px;height:15px}
+.cbar .ic{transition:transform .16s}
+.combo.open .cbar{color:var(--brand)}
+.combo.open .cbar .ic{transform:rotate(180deg)}
 .lib-detail textarea{
   flex:1;min-height:120px;resize:none;border-radius:8px;border:1px solid var(--line2);
   background:var(--sunken);color:var(--fg);font-family:ui-monospace,Consolas,monospace;font-size:12px;
@@ -790,6 +856,25 @@ body.dark .cfg-status code{background:rgba(255,255,255,.08)}
 .sheet.skimport{width:min(720px,94vw);height:auto;max-height:calc(100% - 24px)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .fhint{font-size:10.5px;line-height:1.5;color:var(--fg3)}
+/* 「写适配」模式的说明条。两个入口共用一套编辑器，全靠这条把"这次改的是什么、
+   保存会写到哪"说清楚。用品牌色而不是警告色 —— 它是正常模式，不是有风险的操作。 */
+.sbanner{
+  padding:9px 11px;border-radius:9px;border:1px solid var(--brand-line);
+  background:var(--brand-weak);color:var(--brand-weak-fg);font-size:11.5px;line-height:1.6;
+}
+/* ⚠️ 必须显式写：作者样式会盖掉 hidden 自带的 UA 样式 display:none
+   （跟 .addpreset / .cbx 是同一个坑，见过三次了） */
+.sbanner[hidden]{display:none}
+.sbanner code{padding:0 4px;border-radius:4px;background:rgba(0,0,0,.06);font-size:11px}
+body.dark .sbanner code{background:rgba(255,255,255,.08)}
+
+/* 只读的正文框：置灰但不能太淡 —— 要让人一眼看出"这里是有内容的、只是不能改"。
+   虚线边框当视觉提示，跟旁边可编辑的实线框区分开。 */
+.cfg-body textarea:disabled{
+  background:var(--sunken);color:var(--fg2);cursor:not-allowed;opacity:1;
+  border-style:dashed;
+}
+
 .adv{border:1px dashed var(--line2);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
 .adv summary{cursor:pointer;font-size:11.5px;color:var(--fg2);list-style:none}
 .adv summary::-webkit-details-marker{display:none}
@@ -830,6 +915,32 @@ body.dark .cfg-status code{background:rgba(255,255,255,.08)}
    disabled 的 button 在部分浏览器上会被跳过 tab 焦点，而这条本来就不是操作。 */
 .skmi.hint{color:var(--fg3);cursor:default}
 .skmi.hint:hover{background:transparent}
+
+/* 当前选中的那个（模型清单里用） */
+.skmi.on{background:var(--brand-weak);color:var(--brand);font-weight:600}
+
+/* 清单底部那行「重新拉取」——比模型名淡一档，别抢注意力 */
+.skmi.refresh{
+  display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11.5px;color:var(--fg3);
+  border-top:1px solid var(--line);border-radius:0 0 7px 7px;
+}
+.skmi.refresh:hover{background:var(--hover);color:var(--fg)}
+
+/* 模型选择浮层 —— 代替原生 <datalist>。
+ * 原生候选会被**输入框里现有的文字**过滤：切服务后框里还留着上个服务的模型名，
+ * 候选一条都对不上就整片空白，看着像"拉取没出来"。这里的过滤只由下面那个
+ * 显式搜索框决定，不搜就全列。 */
+.skmenu.skmodels{gap:6px;width:max-content;max-width:min(420px,calc(100vw - 24px))}
+.sksearch{
+  padding:7px 9px;border:1px solid var(--line2);border-radius:7px;
+  background:var(--sunken);color:var(--fg);font-size:12px;font-family:inherit;outline:none;
+}
+.sksearch:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-weak)}
+.sklist{max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+
+/* 框里的模型名不在刚拉到的清单里（多半是从别的服务带过来的残留）→ 标出来 */
+.field input.stale{border-color:var(--err-line);background:var(--err-bg)}
+.fhint.warn{color:var(--err-fg)}
 
 .imp-head{display:flex;align-items:center;gap:6px}
 .imp-list{

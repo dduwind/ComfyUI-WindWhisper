@@ -19,7 +19,13 @@
 
 import { app } from "../../scripts/app.js";
 
-const PANEL_URL = "/extensions/ComfyUI-WindWhisper/panel/index.html";
+/* ★ 面板资源版本：改 web/ 下任何文件都要 +1，和 index.html 里那两处 ?v= 以及
+ * 底部印的那行小字**同一个值**（静态检查盯着一致性，别改漏）。
+ * 为什么要它：用户报"改了看不见"，十有八九是缓存。这个值一变，iframe 的 URL 就变，
+ * 浏览器必然重新拉 index.html、连带里面带 ?v= 的 css/js —— 普通 F5 也就够了，
+ * 不必非得 Ctrl+Shift+R 硬刷。 */
+const PANEL_VER = "20260924j";
+const PANEL_URL = "/extensions/ComfyUI-WindWhisper/panel/index.html?v=" + PANEL_VER;
 const NODE_TYPE = "WindWhisper_Prompt";
 const OVERLAY_ID = "windwhisper-overlay";
 const FAB_ID = "windwhisper-fab";

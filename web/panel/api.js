@@ -124,6 +124,10 @@ var WW = (function () {
     saveSkill: function (id, fields) {
       return req("POST", "/skills/" + encodeURIComponent(id), fields).then(function (d) { return d.skill; });
     },
+    /* 只写适配层：**不碰 SKILL.md**，所以内置 skill 也能调（改正文那条不行）。 */
+    saveSkillAdapter: function (id, fields) {
+      return req("POST", "/skills/" + encodeURIComponent(id) + "/adapter", fields).then(function (d) { return d.skill; });
+    },
     deleteSkill: function (id) { return req("DELETE", "/skills/" + encodeURIComponent(id)); },
     duplicateSkill: function (id, opts) {
       return req("POST", "/skills/" + encodeURIComponent(id) + "/duplicate", opts || {}).then(function (d) { return d.skill; });

@@ -21,6 +21,7 @@ custom_nodes 插件撞车的概率近乎为零（当年 WindMix 就是因为路�
     POST   /windwhisper/skills                新建 skill（写用户目录）
     GET    /windwhisper/skills/{sid}           skill 详情（含适配后的注入正文）
     POST   /windwhisper/skills/{sid}           改 skill（只允许用户目录里的）
+    POST   /windwhisper/skills/{sid}/adapter   只写适配层（任何 skill 都行，不动正文）
     DELETE /windwhisper/skills/{sid}           删 skill（只允许用户目录里的）
     POST   /windwhisper/skills/{sid}/duplicate 复制一份到用户目录（改内置的正规路径）
     GET    /windwhisper/skills/{sid}/export    导出 SKILL.md 原文
@@ -269,11 +270,15 @@ def _register(routes):
                     # 文件没了 / 名字不对 → 退化成"只有文字"照发。
                     # 为一张图让"重发"整个失败，那是拿小问题换大问题。
                     logger.warning("[WindWhisper] 找不到这张图，本轮按纯文字发：%s / %s", rid, ref)
-        # 只贴了图、一个字没打：补一句默认指令，纯图反推不用先打字
+        # 图怎么处理：前端拖图时弹「反推 / 交给当前 skill」二选一，把选择带进来。
+        # 没带 intent（老前端 / 纯文字）一律按反推 —— 跟旧行为一致，零回退。
+        image_intent = str(body.get("image_intent") or "").strip().lower()
+        # 只贴了图、一个字没打：默认反推；只有显式选了"交给 skill"才把图丢给 skill 自己处理。
         pure_image = bool(image) and not text
-        if pure_image:
+        if pure_image and image_intent != "skill":
             text = DEFAULT_IMAGE_PROMPT
-        if not text:
+        # 既没有文字也没有图才真算空（reference 模式下"只有图没字"是合法的）
+        if not text and not image:
             return web.json_response({"ok": False, "error": "消息是空的"}, status=400)
 
         cfg = store.load_config()
@@ -303,7 +308,11 @@ def _register(routes):
         msgs.append(entry)
         chat["msgs"] = msgs
         if len(msgs) == 1 or not chat.get("title") or chat.get("title") == "新会话":
-            chat["title"] = PURE_IMAGE_TITLE if pure_image else store.auto_title(text)
+            if pure_image:
+                # reference 模式（把图交给 skill 自己描述）不该叫"图片反推"
+                chat["title"] = "图片分析" if image_intent == "skill" else PURE_IMAGE_TITLE
+            else:
+                chat["title"] = store.auto_title(text)
         try:
             store.save_chat(cid, chat)
         except Exception as exc:  # noqa: BLE001
@@ -568,9 +577,13 @@ def _register(routes):
 
     # ------------------------------------------- skill 增删改 / 目录导入
     #
-    # ⚠️ 一条硬规则：**只有用户目录里的 skill 能改能删**（skills.py 里守的）。
-    # 内置的只读 —— 想改先调 duplicate 复制到用户目录。这样你在面板里的改动
-    # 不会被下一次插件更新覆盖掉。
+    # ⚠️ 两条**不同**的边界，别混（2026-09-24 拆开）：
+    #   · 改**正文**：只有用户目录里的 skill 能改能删（skills.py 的 save / delete 守的），
+    #     内置的想改正文就先调 duplicate 复制到用户目录。
+    #   · 写**适配**（下面的 `/adapter`）：**任何 skill 都允许**，内置也行 ——
+    #     因为落点永远是 user/default/WindWhisper/adapters/<id>.json，插件目录一个
+    #     字节都不动、插件更新也冲不掉。所以"给内置 skill 做适配"**不需要复制副本**
+    #     （复制会把正文冻在复制那天，而适配层本来就是"原文不动、只加一层"）。
 
     @routes.post("/windwhisper/skills")
     async def windwhisper_skill_create(request):
@@ -598,6 +611,29 @@ def _register(routes):
             detail, err = skills_mod.save(sid, fields)
         except Exception as exc:  # noqa: BLE001
             logger.exception("[WindWhisper] 保存 skill 失败：%s", sid)
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        if err:
+            return web.json_response({"ok": False, "error": err}, status=400)
+        return web.json_response({"ok": True, "skill": detail})
+
+    @routes.post("/windwhisper/skills/{sid}/adapter")
+    async def windwhisper_skill_save_adapter(request):
+        """只写适配层：**不碰 SKILL.md**。
+
+        跟 `POST /skills/{sid}` 的分工 —— 那条改正文（限用户目录里的），
+        这条只改"风语怎么用它"：分类 / 图标 / 显示名 / 描述 / 注入清单 / 剥离规则 / 说明。
+        所以**内置 skill 也能走这条**，这正是它存在的理由。
+        """
+        if skills_mod is None:
+            return web.json_response({"ok": False, "error": "skills 模块未加载"}, status=500)
+        sid = request.match_info.get("sid", "")
+        if _bad_id(sid):
+            return web.json_response({"ok": False, "error": "非法的 skill id"}, status=400)
+        fields = await _body(request)
+        try:
+            detail, err = skills_mod.save_adapter_only(sid, fields)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[WindWhisper] 保存 skill 适配失败：%s", sid)
             return web.json_response({"ok": False, "error": str(exc)}, status=500)
         if err:
             return web.json_response({"ok": False, "error": err}, status=400)
