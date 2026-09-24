@@ -1687,86 +1687,118 @@ function bindChipsScroll() {
  *
  * 为什么不再用外壳那条浅紫拖动条：用户嫌"平白多一栏"，标准做法就是拖标题栏。
  *
- * 五条硬约束（都是踩出来的）：
+ * 六条硬约束（都是踩出来的）：
  *   · **只在居中态起拖** —— 边栏贴着右边缘不参与挪动，也不该白白吞掉点击
- *   · 输入框 / 搜索框这类"拖了有别的含义"的地方不起拖（见 onControl）；
+ *   · 输入框 / 搜索框这类"拖了有别的含义"的地方不起拖（见 titleDragOnControl）；
  *     按钮**可以**起拖 —— 标题栏上按钮密，从按钮上抓才顺手
  *   · 真拖过之后那一下 click 要吞掉，否则松手会顺手触发标题栏上的按钮
  *   · 松手 / 取消 / 丢捕获三条路都要收尾，少一条就卡在 grabbing
  *   · ★ 位移必须用 screenX/screenY —— clientX 会被"自己正在挪 iframe"这件事污染，
- *     拖一格只走半步（见下面 pointermove 里的推导）
+ *     拖一格只走半步（见下面 onTitleDragMove 里的推导）
+ *   · ★★ **捕获必须延后到"确认要拖"之后**，绝不能在 pointerdown 就 setPointerCapture ——
+ *     捕获会改掉 pointerup 的目标，浏览器随之把 click 派发给 .topbar 而不是按钮，
+ *     标题栏上**所有按钮的 onclick 全部失灵**（2026-09-24 用户报的"顶部功能键都不能用"）。
+ *     用户点按钮是**单击**：一次 click 都不该碰捕获，这条路径必须干净。
  */
-function bindTitleDrag(root) {
-  if (!root) return;
-  var st = null;
-  var swallow = false;
+var titleDragState = null;      // 正在拖的那一次（含是哪个 root 起的拖）
+var titleDragSwallow = false;   // 真拖过之后，要吞掉松手那一下 click
+var titleDragWinBound = false;  // window 上的移动/收尾监听只挂一次
 
-  var isModal = function () { return document.body.classList.contains("mode-modal"); };
-  /* 哪些东西上"拖"有别的含义，不能拿来挪窗：
-   *   输入框 / 文本域里拖是选文字，select 是拖选项，链接是拖动链接，.search 里是选搜索词，
-   *   .chip / .chk 是横向滑动手势。
-   * **button 不在排除列表里** —— 标题栏上按钮多，从按钮上起拖照样挪窗，
-   * 而"没移动就松手"的那次 click 会正常触发按钮（只有真拖过才吞掉，见下面的 swallow）。 */
-  var onControl = function (t) {
-    return !!(t && t.closest && t.closest("input,textarea,select,a,.search,.chip,.chk"));
-  };
+function titleDragIsModal() { return document.body.classList.contains("mode-modal"); }
+
+/* 哪些东西上"拖"有别的含义，不能拿来挪窗：
+ *   输入框 / 文本域里拖是选文字，select 是拖选项，链接是拖动链接，.search 里是选搜索词，
+ *   .chip / .chk 是横向滑动手势。
+ * **button 不在排除列表里** —— 标题栏上按钮多，从按钮上起拖照样挪窗；
+ * 而"没移动就松手"的那次 click 会原样落到按钮上（见下面为什么捕获必须延后）。 */
+function titleDragOnControl(t) {
+  return !!(t && t.closest && t.closest("input,textarea,select,a,.search,.chip,.chk"));
+}
+
+function onTitleDragMove(ev) {
+  var s = titleDragState;
+  if (!s || ev.pointerId !== s.id) return;
+  // ★ 必须用 screenX/screenY，不能用 clientX/clientY。
+  //    clientX 是"相对 iframe 视口"的读数，而我们这一拖**正在把 iframe 本身挪走** ——
+  //    窗挪了 X，同一物理位置读出来的 clientX 就少 X，于是形成负反馈：
+  //      X = 目标位移 - X  →  X = 目标位移 / 2
+  //    表现是"拖一格只走半步"（实测拖 187px 只挪 93.5px，正好一半）。
+  //    screenX 是屏幕坐标，不受 CSS transform 影响，读数就是真实位移。
+  var dx = ev.screenX - s.x;
+  var dy = ev.screenY - s.y;
+  if (!s.moved) {
+    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;   // 手抖不算拖
+    s.moved = true;
+    // ★ 确认要拖了，**这才**捕获：之后指针滑出标题栏、甚至滑出面板也照样收得到事件。
+    //    绝不能提到 pointerdown 去做（那正是"顶部按钮全失灵"的元凶，见那里的注释）。
+    try { s.root.setPointerCapture(s.id); } catch (e) { /* 不支持的浏览器就算了 */ }
+    document.body.classList.add("dragging");
+    document.body.style.userSelect = "none";
+    sendToParent("windwhisper/modal-drag", { phase: "start" });
+  }
+  s.dx = dx;
+  s.dy = dy;
+  ev.preventDefault();
+  sendToParent("windwhisper/modal-drag", { phase: "move", dx: dx, dy: dy });
+}
+
+// 收尾统一走这里。注意用 s.dx/s.dy 而不是现读 ev.screenX —
+// lostpointercapture / pointerup 这些收尾事件坐标不可靠，现读会把窗瞬移到奇怪的地方。
+function finishTitleDrag() {
+  var s = titleDragState;
+  if (!s) return;
+  titleDragState = null;
+  document.body.classList.remove("dragging");
+  document.body.style.userSelect = "";
+  if (!s.moved) return;                 // 没真拖过 → 什么也不做，click 原样走按钮
+  titleDragSwallow = true;
+  sendToParent("windwhisper/modal-drag", { phase: "end", dx: s.dx, dy: s.dy });
+}
+
+function bindTitleDrag(root) {
+  if (!root || root.__wwDragBound) return;   // 弹层会重建，防同一元素绑两遍
+  root.__wwDragBound = true;
 
   root.addEventListener("pointerdown", function (ev) {
-    if (ev.button !== 0 || !isModal() || onControl(ev.target)) return;
-    swallow = false;
-    st = { id: ev.pointerId, x: ev.screenX, y: ev.screenY, dx: 0, dy: 0, moved: false };
-    try { root.setPointerCapture(ev.pointerId); } catch (e) { /* 不支持的浏览器就算了 */ }
+    if (ev.button !== 0 || !titleDragIsModal() || titleDragOnControl(ev.target)) return;
+    if (titleDragState && titleDragState.id !== ev.pointerId) return;   // 多指同时按：只认第一根
+    titleDragState = {
+      root: root, id: ev.pointerId, x: ev.screenX, y: ev.screenY,
+      dx: 0, dy: 0, moved: false,
+    };
+    titleDragSwallow = false;
+    // ★★ 这里**故意不** setPointerCapture —— 这是踩过的坑，别再挪回来：
+    //    捕获一上来，pointerup 的目标就从按钮变成 .topbar，浏览器随之把 click
+    //    也派发给 .topbar（"按下点与松开点的公共祖先"）—— 于是标题栏上**所有
+    //    按钮的 onclick 全部收不到**，表现就是"加了拖动之后顶部按钮全失灵"。
+    //    实测事件链：pointerdown→svg / pointerup→topbar / click→topbar，
+    //    按钮自己的监听被调 0 次。
+    //    延后到 onTitleDragMove（确认要拖）之后，纯单击一步都不碰捕获，点击链路原样保留。
   });
 
-  root.addEventListener("pointermove", function (ev) {
-    if (!st || ev.pointerId !== st.id) return;
-    // ★ 必须用 screenX/screenY，不能用 clientX/clientY。
-    //    clientX 是"相对 iframe 视口"的读数，而我们这一拖**正在把 iframe 本身挪走** ——
-    //    窗挪了 X，同一物理位置读出来的 clientX 就少 X，于是形成负反馈：
-    //      X = 目标位移 - X  →  X = 目标位移 / 2
-    //    表现是"拖一格只走半步"（实测拖 187px 只挪 93.5px，正好一半）。
-    //    screenX 是屏幕坐标，不受 CSS transform 影响，读数就是真实位移。
-    var dx = ev.screenX - st.x;
-    var dy = ev.screenY - st.y;
-    if (!st.moved) {
-      if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;   // 手抖不算拖
-      st.moved = true;
-      document.body.classList.add("dragging");
-      document.body.style.userSelect = "none";
-      sendToParent("windwhisper/modal-drag", { phase: "start" });
-    }
-    st.dx = dx;
-    st.dy = dy;
-    ev.preventDefault();
-    sendToParent("windwhisper/modal-drag", { phase: "move", dx: dx, dy: dy });
-  });
-
-  // 收尾统一走这里。注意用 st.dx/st.dy 而不是现读 ev.screenX —
-  // lostpointercapture / pointerup 这些收尾事件坐标不可靠，现读会把窗瞬移到奇怪的地方。
-  var finish = function () {
-    if (!st) return;
-    var s = st;
-    st = null;
-    document.body.classList.remove("dragging");
-    document.body.style.userSelect = "";
-    if (!s.moved) return;
-    swallow = true;
-    sendToParent("windwhisper/modal-drag", { phase: "end", dx: s.dx, dy: s.dy });
-  };
-  root.addEventListener("pointerup", finish);
-  root.addEventListener("pointercancel", finish);
-  root.addEventListener("lostpointercapture", finish);
+  if (!titleDragWinBound) {
+    titleDragWinBound = true;
+    // 挂 window 而不是各个 root：拖窗时指针很容易跑出标题栏那块区域，挂 root 就得
+    // 先捕获才收得到 —— 而捕获正是我们要推迟的那一步。window 覆盖整个 iframe 视口，
+    // 第一帧就滑出标题栏也不会丢事件。
+    window.addEventListener("pointermove", onTitleDragMove);
+    window.addEventListener("pointerup", finishTitleDrag);
+    window.addEventListener("pointercancel", finishTitleDrag);
+  }
+  root.addEventListener("lostpointercapture", finishTitleDrag);   // 捕获意外丢失也要收尾
 
   root.addEventListener("click", function (ev) {
-    if (!swallow) return;
-    swallow = false;
+    if (!titleDragSwallow) return;
+    titleDragSwallow = false;
     ev.stopPropagation();
     ev.preventDefault();
   }, true);
 
-  // 双击标题栏 = 回屏幕正中（这条原先在外壳的拖动条上，条没了挪到这儿，不影响拖动）
+  // 双击标题栏 = 回屏幕正中（这条原先在外壳的拖动条上，条没了挪到这儿，不影响拖动）。
+  // 按钮上双击不算 —— 那是"连点两下按钮"，不该顺手把窗弹回正中。
   root.addEventListener("dblclick", function (ev) {
-    if (!isModal() || onControl(ev.target)) return;
+    if (!titleDragIsModal() || titleDragOnControl(ev.target)) return;
+    if (ev.target.closest && ev.target.closest("button,.ibtn,.pill")) return;
     sendToParent("windwhisper/modal-drag", { phase: "reset" });
   });
 }
