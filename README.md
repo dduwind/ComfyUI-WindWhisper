@@ -9,6 +9,10 @@ ComfyUI 的提示词面板不少，但大多数是「一扇独立的窗」：聊
 A prompt copilot docked inside ComfyUI. Chat with any OpenAI-compatible backend,
 load your own prompt skills, and push the result straight into your workflow node.
 
+<p align="center">
+  <img src="docs/screenshot-chat.png" alt="风语面板 · 对话与提示词卡片" width="480">
+</p>
+
 ---
 
 ## 功能
@@ -16,7 +20,7 @@ load your own prompt skills, and push the result straight into your workflow nod
 | | |
 |---|---|
 | **接进工作流** | 节点 `🍃 风语 · 提示词` 接住文本。推送三级兜底：画布选中的 → 上次推过的 → 弹列表让你点。**推送不触发出图**，仍要自己点 `Queue Prompt` |
-| **可插拔 skill** | 一个 skill 一套人设与规则。芯片一条横滑切换，带「主 skill · 附加参考」两层。仓库内置 9 个开箱可用（**均为网络收集，版权归原作者**，见 [`skills/README.md`](skills/README.md)），也能导入你自己的 |
+| **可插拔 skill** | 一个 skill 一套人设与规则。芯片一条横滑切换，带「主 skill · 附加参考」两层。仓库内置 12 个开箱可用（**均为网络收集，版权归原作者**，见 [`skills/README.md`](skills/README.md)），也能导入你自己的 |
 | **任意后端** | llama.cpp / Ollama / LM Studio / vLLM / OpenAI / DeepSeek / 任何 OpenAI 兼容端点。本地服务**不用填 API Key** |
 | **悬浮按钮 + 双形态** | 画布上一个可拖动的叶子按钮（位置记住）。**单击**开窄边栏（默认 420px，拖边缘可调宽），**双击**开居中大窗。共用同一份聊天记录 |
 | **多会话并行** | 想开多少开多少，各自命名、各自记上下文，关掉还能回来 |
@@ -108,6 +112,48 @@ llama-server.exe -m <你的模型>.gguf --port 8080 -c 32768
 - **全局提示词**：设置里的「全局提示词」会追加到每次对话的 system 末尾。
   它有几个快捷开关（附一句改动说明 / 给几个备选 / 更精简），点了是把文字**写进输入框**，你还能改
 
+### 推到节点之后
+
+<p align="center">
+  <img src="docs/screenshot-pushed.png" alt="提示词卡已推到节点" width="480">
+</p>
+
+卡片底色转成强调色、卡头长出实心勾徽章，「推到节点」按钮降级成描边态 —— 一眼能看出哪条已经进去了。
+**再推一次会覆盖**，且**不触发出图**，仍要回画布点 `Queue Prompt`。
+
+### Skill 管理
+
+<p align="center">
+  <img src="docs/screenshot-skills.png" alt="Skill 管理：卡片 + 分类 + 启停" width="480">
+</p>
+
+- 点卡片 = 设为**人设**（单选，决定输出格式）；底部芯片 = **附加参考**（多选，只加内容不改格式）
+- 每个 skill 有独立的**启用开关**，关掉的不会出现在芯片条里 —— 眼不见心不烦
+- 内置 skill 也支持「**写适配**」改显示名 / 分类 / 剥离规则：**不碰 SKILL.md 原文**，插件更新也冲不掉
+
+### 后端设置
+
+<p align="center">
+  <img src="docs/screenshot-settings.png" alt="后端设置：快速填地址 + 外观" width="480">
+</p>
+
+- 「快速填地址」内置 llama.cpp / Ollama / OpenAI 三条，`+` 可以加自己的（存浏览器本地）
+- 换服务时**地址 / Key / 模型整套跟着换**，不用一个个手改
+- 本地服务**不用填 API Key**，留空就不发 `Authorization` 头
+
+### 4 个强调色 × 深浅
+
+<p align="center">
+  <img src="docs/screenshot-themes.png" alt="四个强调色系 × 深浅，共 8 组主题" width="880">
+</p>
+
+强调色只出现在 5 类地方（品牌标记 / 提示词卡标记 / 主行动按钮 / 已推态 / skill 主胶囊），
+不会糊一整片。选「跟随」就跟 ComfyUI 自己的深浅走；手动锁了之后会记住。
+
+<p align="center">
+  <img src="docs/screenshot-chat-dark.png" alt="深色模式" width="480">
+</p>
+
 ---
 
 ## 节点
@@ -130,7 +176,8 @@ llama-server.exe -m <你的模型>.gguf --port 8080 -c 32768
 ComfyUI-WindWhisper/
 ├── __init__.py              插件入口（节点注册 + 路由挂载）
 ├── adapters/                内置 skill 的适配规则（可选，见 skills/README.md）
-├── skills/                  内置 skill 目录（9 个 · 网络收集，版权归原作者，见该目录 README）
+├── docs/                    README 用的界面截图
+├── skills/                  内置 skill 目录（12 个 · 网络收集，版权归原作者，见该目录 README）
 ├── windwhisper/
 │   ├── nodes.py             节点定义
 │   ├── routes.py            25 条 /windwhisper/* 路由
@@ -184,14 +231,6 @@ ComfyUI/user/default/WindWhisper/
 
 ---
 
-## 致谢
-
-- 面板与交互设计参考了 [ComfyUI_ComfyAssistant](https://github.com/ComfyNodePRs/ComfyUI_ComfyAssistant) 的悬浮入口思路
-- 词库的两栏布局参考了 ComfyUI-H3-PromptWriter 的组织方式
-- 图标来自 [lucide](https://lucide.dev/)
-
----
-
 ## 许可
 
 本项目的**代码**采用 [MIT](LICENSE) —— 随便用，保留版权声明即可。
@@ -202,8 +241,7 @@ ComfyUI/user/default/WindWhisper/
 
 ---
 
-> ⚠️ **许可证只覆盖代码。** 仓库内置的 9 个 skill 均为**网络收集**，版权归各自原作者，
-> 仅作学习与个人创作之用 —— 详见 [`skills/README.md`](skills/README.md) 与各 skill 目录里的
-> `SOURCE.md`（作者申明即可移除）。
+> ⚠️ **许可证只覆盖代码。** 仓库内置的 12 个 skill 均为**网络收集**，版权归各自原作者，
+> 仅作学习与个人创作之用 —— 详见 [`skills/README.md`](skills/README.md) 里集中的一份来源声明。
 > **你自己的 skill 不放这儿**：放 `ComfyUI/user/default/WindWhisper/skills/`，
 > 跟着你的 ComfyUI 走，插件更新也不会覆盖。
