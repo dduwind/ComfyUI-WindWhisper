@@ -110,14 +110,23 @@ function togglePanelMode() {
  *   ② 没点过 → 跟随 ComfyUI 当前主题（父页面用 windwhisper/init + windwhisper/theme 告知）
  *   ③ 面板被单独打开（没有父页面）→ 默认浅色
  * 选择存 localStorage，刷新不丢。KEY 带版本号，以后改结构不至于读到脏值。
+ *
+ * v6 起多两个正交维度：
+ *   scheme = auto | light | dark   明暗。auto 才跟随 ComfyUI。
+ *   accent = violet | amber | teal | rose   强调色。永远不由父页面决定。
+ * 两个维度分开存，所以只换色不丢明暗选择、只换明暗不丢色系。
  */
-var THEME_KEY = "windwhisper_theme_v1";
-var themeLocked = false;   // true = 用户手动选过，父页面再报主题也不覆盖
+var THEME_KEY   = "windwhisper_theme_v1";   // 明暗（沿用旧 key，别让老用户的选择白存）
+var ACCENT_KEY  = "windwhisper_accent_v1";  // 色系
+var ACCENTS = ["violet", "amber", "teal", "rose"];
+var ACCENT_CN = { violet: "紫", amber: "琥珀", teal: "青", rose: "玫" };
+var themeLocked = false;   // true = 用户手动选过明暗，父页面再报主题也不覆盖
+var accent = "violet";
 
 function readThemePref() {
   try {
     var v = localStorage.getItem(THEME_KEY);
-    return (v === "dark" || v === "light") ? v : "";
+    return (v === "dark" || v === "light" || v === "auto") ? v : "";
   } catch (err) { return ""; }
 }
 
@@ -125,9 +134,44 @@ function saveThemePref(v) {
   try { localStorage.setItem(THEME_KEY, v); } catch (err) { /* 隐私模式写不了，不影响用 */ }
 }
 
+function readAccent() {
+  try {
+    var v = localStorage.getItem(ACCENT_KEY);
+    return ACCENTS.indexOf(v) >= 0 ? v : "violet";
+  } catch (err) { return "violet"; }
+}
+
+function saveAccent(v) {
+  try { localStorage.setItem(ACCENT_KEY, v); } catch (err) { /* 隐私模式写不了 */ }
+}
+
+/* auto 档实际落在哪个值上：读 body.dark（父页面已经同步过来的 ComfyUI 主题） */
+function schemeNow() {
+  var pref = readThemePref() || "auto";
+  if (pref === "light" || pref === "dark") return pref;
+  return document.body.classList.contains("dark") ? "dark" : "light";
+}
+
+function applyAccent() {
+  document.body.setAttribute("data-accent", accent);
+  document.body.setAttribute("data-tint", accent === "amber" ? "warm" : "cool");
+  // 「暖墨」底色只对琥珀有意义 —— 紫/青/玫都是冷调，共用冷底才不显脏
+  syncAccentUI();
+}
+
+/* 色系切换器 + 设置里的色卡区共用这一个入口 */
+function setAccent(v, quiet) {
+  if (ACCENTS.indexOf(v) < 0) return;
+  accent = v;
+  saveAccent(v);
+  applyAccent();
+  if (!quiet) toast("强调色：已切到" + (ACCENT_CN[v] || v));
+}
+
 function applyTheme(dark) {
   var isDark = !!dark;
   document.body.classList.toggle("dark", isDark);
+  document.body.setAttribute("data-scheme", isDark ? "dark" : "light");
   // 图标是 CSS 切的（浅色露月亮 / 深色露太阳），这里只改 tooltip
   var btn = $("themeBtn");
   if (btn) {
@@ -135,6 +179,25 @@ function applyTheme(dark) {
       ? "当前深色 · 点一下切到浅色（记住你的选择，不再跟随 ComfyUI）"
       : "当前浅色 · 点一下切到深色（记住你的选择，不再跟随 ComfyUI）";
   }
+  syncSchemeUI();
+}
+
+/* 设置弹层里的三档明暗：跟随 / 浅 / 深 —— 这里的 auto 才真的跟随 ComfyUI */
+function setScheme(v) {
+  if (v !== "auto" && v !== "light" && v !== "dark") return;
+  if (v === "auto") {
+    themeLocked = false;
+    saveThemePref("auto");
+    // auto = 回到"跟着 ComfyUI 走"：立刻按当前 body.dark 重算一次
+    applyTheme(document.body.classList.contains("dark"));
+    toast("明暗：已改为跟随 ComfyUI");
+  } else {
+    themeLocked = true;
+    saveThemePref(v);
+    applyTheme(v === "dark");
+    toast("明暗：已固定为" + (v === "dark" ? "深色" : "浅色") + "，不再跟随 ComfyUI");
+  }
+  syncSchemeUI();
 }
 
 /* 父页面报主题走这里 —— 用户手动选过就一律不覆盖 */
@@ -144,15 +207,18 @@ function applyParentTheme(dark) {
 }
 
 function initTheme() {
+  accent = readAccent();
   var pref = readThemePref();
-  if (pref) {
+  if (pref === "light" || pref === "dark") {
     themeLocked = true;        // 手动选过 → 后面的 init / theme 都不理
     applyTheme(pref === "dark");
   } else {
     applyTheme(false);         // 先按浅色出，等父页面 init 告知真实主题
   }
+  applyAccent();
 }
 
+/* 顶栏那个按钮只切明暗两态（老行为，别改）—— 想跟随时去设置里选"跟随" */
 function toggleTheme() {
   var nextDark = !document.body.classList.contains("dark");
   themeLocked = true;
@@ -363,7 +429,77 @@ function fillSettings() {
   renderBasePresets();   // 自己加的地址存在本地，每次打开设置都按最新的画一遍
   toggleAddPreset(false);
   refreshModelFlag();    // 上次拉过的话，顺手把"这个名字对不上"标出来
+  syncAccentUI();        // 主题相关的选中态要跟当前值对得上
+  syncSchemeUI();
   setCfgStatus(state.cfg ? "读到了当前配置，改完记得点保存" : "没读到配置，先把地址填上", "");
+}
+
+/* ═══════════════ 主题 UI 同步（P2）═══════════════
+ * 顶栏调色板浮层和设置里的色卡区是同一份状态的两个视图，
+ * 所以选中态统一由这两个函数刷，别在 onclick 里各自维护一份。 */
+function syncAccentUI() {
+  var pal = $("accentPalette");
+  if (pal) {
+    pal.setAttribute("data-accent", accent);
+    Array.prototype.forEach.call(pal.querySelectorAll("[data-set-accent]"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-set-accent") === accent));
+    });
+  }
+  var cards = $("accentCards");
+  if (cards) {
+    Array.prototype.forEach.call(cards.querySelectorAll("[data-set-accent]"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-set-accent") === accent));
+    });
+  }
+  // 设置里的说明文字跟着换，写死会跟实际色系对不上
+  var tip = $("accentTip");
+  if (tip) tip.textContent = "当前强调色：" + (ACCENT_CN[accent] || accent)
+    + "。强调色只出现在 5 个地方：品牌图标 / 提示词卡标记 / 主行动按钮 / 已推入状态 / skill 主胶囊。";
+}
+
+function syncSchemeUI() {
+  var cur = readThemePref() || "auto";
+  var seg = $("schemeSeg");
+  if (seg) {
+    Array.prototype.forEach.call(seg.querySelectorAll("[data-set-scheme]"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-set-scheme") === cur));
+    });
+  }
+  var palSeg = $("schemeSegPal");
+  if (palSeg) {
+    Array.prototype.forEach.call(palSeg.querySelectorAll("[data-set-scheme]"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-set-scheme") === cur));
+    });
+  }
+}
+
+/* 顶栏调色板浮层 */
+function toggleAccentPopover(force) {
+  var el = $("accentPop");
+  if (!el) return;
+  var open = (typeof force === "boolean") ? force : (el.getAttribute("data-open") !== "1");
+  el.setAttribute("data-open", open ? "1" : "0");
+  if (open) syncAccentUI();
+}
+
+/* 点浮层外面 / 按 Esc 都收起来。document 上监听一次，别给每个色卡都挂。
+ * ⚠️ 必须排除触发按钮本身：#accentBtn 的 onclick 会让这次点击继续冒泡到 document，
+ *    不排掉的话刚打开就被自己关掉（表现是"点了没反应"）。 */
+function bindAccentPopover() {
+  var pop = $("accentPop");
+  if (!pop) return;
+  document.addEventListener("click", function (ev) {
+    var p = $("accentPop");
+    if (!p || p.getAttribute("data-open") !== "1") return;
+    if (pop.contains(ev.target)) return;
+    if ($("accentBtn") && $("accentBtn").contains(ev.target)) return;   // 点按钮 = 切换，不算"外面"
+    toggleAccentPopover(false);
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    var p = $("accentPop");
+    if (p && p.getAttribute("data-open") === "1") { toggleAccentPopover(false); ev.stopPropagation(); }
+  });
 }
 
 function collectSettings() {
@@ -1403,10 +1539,12 @@ function cardHtml(card, msgIdx, cardIdx, neg) {
 
   return '<div class="card-note" id="' + id + '">'
     + '<div class="head">'
-    + '<svg class="ic sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
-    + "<span>提示词</span>" + chip + '<span class="grow"></span>'
-    + '<span class="pushed-badge"><svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round"><polyline points="20 6 9 17 4 12"/></svg>已推到节点</span>'
-    + "<span>" + text.length + " 字</span>"
+    /* 卡头标记：常态 7px 方块，pushed 时由 CSS 原地长成 14px 勾徽章。
+       它替掉了原来那个文件图标 —— 图标只说明"这是文档"，方块才标得出"这是产出物"。 */
+    + '<span class="cn-mark"></span>'
+    + '<span class="cn-kind">提示词</span>' + chip + '<span class="grow"></span>'
+    + '<span class="cn-len">' + text.length + " 字</span>"
+    + '<span class="pushed-badge"><svg viewBox="0 0 24 24" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap="round";stroke-linejoin="round""><polyline points="20 6 9 17 4 12"/></svg>已推到节点</span>'
     + "</div>"
     + '<div class="body">' + esc(text) + "</div>"
     + negHtml
@@ -1555,10 +1693,17 @@ function renderMessages() {
     return msg;
   }).join("");
 
-  // 重新渲染后把"已推到节点"的渐变标记补回去
+  // 重新渲染后把"已推到节点"的标记补回去。
+  // ⚠️ 按钮也要一起降级：卡片已经是淡紫底 + 实心勾徽章了，
+  //    「推到节点」还留满紫实心的话，已推卡反而比未推卡更抢眼（权重倒挂）。
+  //    → .done 态：紫字紫边无底，能力保留（还能再推一次），但不再喊。
   if (pushedCardId) {
     var c = $(pushedCardId);
-    if (c) c.classList.add("pushed");
+    if (c) {
+      c.classList.add("pushed");
+      var pb = c.querySelector(".foot .mini.primary");
+      if (pb) pb.classList.add("done");
+    }
   }
 }
 
@@ -3342,14 +3487,23 @@ function onPushed(msg) {
     return;
   }
 
-  // 渐变标记唯一化：推 B 时自动清掉 A，保证「渐变 = 此刻节点里就是这条」
+  // 「已推入」标记唯一化：推 B 时自动清掉 A，保证「标记 = 此刻节点里就是这条」
+  // 按钮同步降级（.done）：旧卡要恢复满紫主按钮，新卡转紫字紫边。
   var all = document.querySelectorAll(".card-note.pushed");
-  for (var i = 0; i < all.length; i++) all[i].classList.remove("pushed");
+  for (var i = 0; i < all.length; i++) {
+    all[i].classList.remove("pushed");
+    var ob = all[i].querySelector(".foot .mini.primary");
+    if (ob) ob.classList.remove("done");
+  }
 
   pushedCardId = (req && req.cardId) ? req.cardId : null;
   if (pushedCardId) {
     var card = $(pushedCardId);
-    if (card) card.classList.add("pushed");
+    if (card) {
+      card.classList.add("pushed");
+      var nb = card.querySelector(".foot .mini.primary");
+      if (nb) nb.classList.add("done");
+    }
   }
 
   showPushedBar(req ? req.text : "", msg.nodeId);
@@ -3596,6 +3750,9 @@ document.addEventListener("paste", function (ev) {
 
 // 主题要先定下来再渲染 —— 否则会先闪一下浅色再跳深色
 initTheme();
+
+// 调色板浮层：点外面收起、Esc 收起（document 上挂一次就行，别给每个色卡都挂）
+bindAccentPopover();
 
 // 形态先按侧边栏落定，真实的形态等父页面 init 时告知（单独打开面板时没有父页面，就是侧边栏语义）
 applyPanelMode("dock");

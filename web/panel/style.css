@@ -1,86 +1,43 @@
 /* WindWhisper 面板样式
  *
  * ⚠️ 这个页面跑在 iframe 里，**拿不到 ComfyUI 的主题变量**。
- *    所以这里写死了浅 / 深两套色值，深色由父页面用 postMessage 通知后加 .dark 类。
- *    不要引用 ComfyUI 的主题变量（--bg-color / --fg-color 这类），在这里会得到空值。
+ *    所有色值都在 tokens.css 里，本文件只管版式。改色去改那份。
  *
  * 窄屏用真实的媒体查询（<720px），因为 iframe 的视口宽度就是面板宽度。
  */
 
-:root{
-  /* 品牌 */
-  --brand:#534AB7; --brand-fg:#FFFFFF; --brand-weak:#EEEDFE; --brand-weak-fg:#534AB7; --brand-line:#CECBF6;
-  --brand-grad:linear-gradient(135deg,#6E60E8 0%,#534AB7 100%);
-  --brand-glow:rgba(83,74,183,.45);
-
-  /* 面 —— 带光的渐变，不是纯平色 */
-  --panel-bg:
-    radial-gradient(84% 38% at 50% 0%, rgba(139,114,245,.16), transparent 70%),
-    linear-gradient(168deg,#FCFBFF 0%,#F1EFFB 48%,#E9E6F7 100%);
-  --bar-grad:linear-gradient(180deg,rgba(255,255,255,.82) 0%,rgba(250,249,254,.70) 100%);
-  --card-grad:linear-gradient(168deg,#FFFFFF 0%,#FCFBFE 100%);
-  --card:#FFFFFF; --sunken:#F1F0F7;
-  --drawer-bg:linear-gradient(180deg,#FFFFFF 0%,#FAF9FE 100%);
-
-  /* 文字 */
-  --fg:#1A1A18; --fg2:#6B6B66; --fg3:#9A9A94;
-  --line:rgba(0,0,0,.10); --line2:rgba(0,0,0,.16); --hover:rgba(0,0,0,.045);
-  --hairline:linear-gradient(90deg, rgba(83,74,183,.75) 0%, rgba(83,74,183,.14) 36%, rgba(83,74,183,0) 82%);
-  --ok:#1D9E75;
-  /* 提示条（skill 详情里说明「哪些内容被剥离了」） */
-  --warn-bg:#FFF8E9; --warn-line:#EDD9A8; --warn-fg:#8A5A10;
-
-  /* 推到节点的渐变 */
-  --push-grad:linear-gradient(125deg,#D5CDF9 0%,#E8E3FC 40%,#FDFCFF 94%);
-  --push-bar:linear-gradient(90deg,#CFC5F7 0%,#E4DFFB 48%,#F2F0FA 100%);
-  --push-ring:0 0 0 1px var(--brand-line), 0 10px 26px -14px var(--brand-glow);
-}
-
-body.dark{
-  --brand:#A78BFA; --brand-fg:#141414; --brand-weak:rgba(167,139,250,.16); --brand-weak-fg:#CECBF6; --brand-line:rgba(167,139,250,.34);
-  --brand-grad:linear-gradient(135deg,#AC98FF 0%,#8B76F2 100%);
-  --brand-glow:rgba(139,114,245,.55);
-
-  --panel-bg:
-    radial-gradient(84% 40% at 50% 0%, rgba(139,114,245,.22), transparent 70%),
-    linear-gradient(168deg,#1D1A2A 0%,#16131F 50%,#0D0B14 100%);
-  --bar-grad:linear-gradient(180deg,rgba(37,33,52,.78) 0%,rgba(27,24,38,.66) 100%);
-  --card-grad:linear-gradient(168deg,#221F30 0%,#1B1826 100%);
-  --card:#1B1826; --sunken:#171523;
-  --drawer-bg:linear-gradient(180deg,#1E1B2B 0%,#15121E 100%);
-
-  --fg:#E8E8E6; --fg2:#9A9A94; --fg3:#6B6B66;
-  --line:rgba(255,255,255,.12); --line2:rgba(255,255,255,.20); --hover:rgba(255,255,255,.06);
-  --hairline:linear-gradient(90deg, rgba(167,139,250,.85) 0%, rgba(167,139,250,.16) 36%, rgba(167,139,250,0) 82%);
-  --ok:#5DCAA5;
-  --warn-bg:rgba(232,199,122,.10); --warn-line:rgba(232,199,122,.28); --warn-fg:#E0C285;
-
-  --push-grad:linear-gradient(125deg,rgba(167,139,250,.42) 0%,rgba(139,114,245,.19) 42%,#221E33 94%);
-  --push-bar:linear-gradient(90deg,#3D2F69 0%,#2A2340 48%,#191725 100%);
-  --push-ring:0 0 0 1px rgba(167,139,250,.42), 0 12px 30px -14px rgba(0,0,0,.9);
-}
+/* 深色兼容：JS 还在用 body.dark（P2 起改成 data-scheme，这里留着不删，
+   免得几十处 body.dark xxx 选择器一起返工）。 */
+body.dark{--bg:#15120E;--surface:#1E1B16;--sunken:#191510;--drawer:#1A1713;
+  --fg:#F5F1EA;--fg2:#B0A698;--fg3:#7C7266;
+  --line:rgba(245,241,234,.13);--line2:rgba(245,241,234,.22);--hover:rgba(245,241,234,.06)}
 
 *{box-sizing:border-box;margin:0;padding:0}
 
 html,body{height:100%}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
-  color:var(--fg);background:var(--panel-bg);overflow:hidden;
+  color:var(--fg);background:var(--bg);overflow:hidden;
   display:flex;flex-direction:column;
   -webkit-font-smoothing:antialiased;
 }
-.ic{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ic{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap="round";stroke-linejoin="round"}
 .ic.sm{width:14px;height:14px}
 
 /* ------------------------------------------------------------------ 顶栏 */
 .topbar{
   height:52px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;
-  border-bottom:1px solid var(--line);background:var(--bar-grad);backdrop-filter:blur(12px);
-  position:relative;z-index:2;
+  background:var(--surface);          /* v7：顶栏是「一块面」，下边线删掉 —— 下一块是 --sunken 凹槽面，靠明度差分层 */
+  /* z-index 必须高过两样：
+     ① .skillbar 的 2 —— 同级时后出现的 skillbar 会盖掉浮层（色卡下半截被吃掉）
+     ② .pushed-bar 的 6 —— 那根吸附条是 sticky，会滑到顶栏底下。
+        5 < 6 时它压在顶栏之上，浮层（40，但只在顶栏内部比较）跟着一起被遮。
+        给到 10，一次性高过所有滚动内容层。 */
+  position:relative;z-index:10;
 }
 .topbar::after{
   content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:var(--hairline);pointer-events:none;
+  background:var(--line);pointer-events:none;
 }
 /* 大窗形态下标题栏就是"拖动把手"（外壳那条浅紫拖动条已去掉，见 app.js 的 bindTitleDrag）。
    只在居中态给 move 光标才有意义 —— 边栏贴着右边，不给这个暗示。
@@ -104,11 +61,13 @@ body.dark #themeBtn .ic-moon{display:block}
 body.mode-modal #modeBtn .ic-max{display:none}
 body.mode-modal #modeBtn .ic-min{display:block}
 .brand{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:500;letter-spacing:.3px;padding:0 2px}
+/* 品牌标记是全稿唯一的"常驻紫色"，但它只是标识 —— 不发光。
+   发光留给发送键这类"点了会发生事"的按钮。 */
 .brand-mark{
-  width:18px;height:18px;border-radius:6px;background:var(--brand-grad);display:grid;place-items:center;
-  color:#fff;box-shadow:0 3px 10px -2px var(--brand-glow);
+  width:18px;height:18px;border-radius:6px;background:var(--acc);display:grid;place-items:center;
+  color:var(--acc-fg);
 }
-body.dark .brand-mark{color:#141414}
+body.dark .brand-mark{color:var(--acc-fg)}
 .brand-mark svg{width:11px;height:11px}
 .spacer{flex:1}
 .pill{
@@ -118,10 +77,57 @@ body.dark .brand-mark{color:#141414}
 .pill:hover{background:var(--hover)}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none;box-shadow:0 0 0 3px rgba(29,158,117,.16)}
 
+/* ═══════════════ 调色板浮层（P2）═══════════════
+ * 定位挂在 #accentPop 自己的按钮后面 —— 用绝对定位而不是 fixed：
+ * 面板跑在 iframe 里，fixed 的 containing block 可能被别的 transform 改掉。
+ * ⚠️ .topbar 自己就是 z-index:2 的层叠上下文，所以浮层 z-index 要**在 .topbar 内部**够大
+ *    （这里 40）；同时 .skillbar 有 overflow:hidden 会裁掉溢出内容，
+ *    因此浮层必须挂在 .topbar 里，不能挂到 body 上。 */
+.accent-pop{
+  position:absolute;top:46px;right:8px;z-index:40;width:250px;
+  display:none;flex-direction:column;gap:var(--s3);
+  padding:var(--s3);
+  background:var(--surface);border:1px solid var(--line2);
+  border-radius:var(--r-card);box-shadow:var(--shadow-pop);
+}
+.accent-pop[data-open="1"]{display:flex}
+.ap-sec{display:flex;flex-direction:column;gap:var(--s2)}
+.ap-lbl{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg3)}
+.ap-accents{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.ap-accents.inline{display:inline-grid;vertical-align:middle}
+.ap-accent{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:7px 4px 6px;border-radius:var(--r-ctl);
+  border:1px solid var(--line2);background:transparent;
+  color:var(--fg2);font:500 11px/1 var(--font-ui);cursor:pointer;transition:.15s;
+}
+.ap-accent:hover{border-color:var(--fg3);color:var(--fg)}
+.ap-accent[aria-pressed="true"]{border-color:var(--acc);background:var(--acc-weak);color:var(--acc-weak-fg)}
+/* 色卡是**两段色**：上半浅下半深，比单色方块更能看出这个色系的性格 */
+.ap-sw{
+  width:100%;height:16px;border-radius:4px;flex:none;
+  background:linear-gradient(135deg,var(--s1) 0 50%,var(--s2) 50% 100%);
+}
+.ap-nm{font-size:10.5px}
+.ap-seg{
+  display:inline-flex;padding:2px;gap:2px;
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--r-pill);
+}
+.ap-seg button{
+  flex:1;height:24px;padding:0 10px;border:none;border-radius:var(--r-pill);
+  background:transparent;color:var(--fg3);
+  font:500 11px/1 var(--font-ui);cursor:pointer;transition:.15s;
+}
+.ap-seg button:hover{color:var(--fg)}
+.ap-seg button[aria-pressed="true"]{background:var(--surface);color:var(--acc);box-shadow:var(--shadow-card)}
+.ap-note{font-size:10.5px;line-height:1.55;color:var(--fg3)}
+
 /* ---------------------------------------------------- skill 芯片条（☰ 在最左） */
+/* v7：芯片条整条压成一块**凹槽面**（--sunken），不再「白底 + 下边线」——
+   层级靠面而不是靠那条线。 */
 .skillbar{
   height:46px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;
-  border-bottom:1px solid var(--line);background:var(--bar-grad);backdrop-filter:blur(12px);
+  background:var(--sunken);
   overflow:hidden;position:relative;z-index:2;
 }
 /* skill 芯片条：**单行横滑**。
@@ -137,53 +143,71 @@ body.dark .brand-mark{color:#141414}
 #chips .chip{flex:0 0 auto;max-width:176px}
 #chips .chip .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chips.grabbing{cursor:grabbing}
+/* ★ v7：胶囊**无框**。原来常态是「透明底 + 一圈 --line2」，选中才是实心紫——
+   于是整条芯片区是一排小灰框，也就是「线框多」的主要来源之一。
+   现在常态用淡块（--surface，暗底上就是「抬起一档」），选中用实心紫：
+   层级靠底色，hover 靠换块，都不再动边框。 */
 .chip{
   display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:14px;
-  border:1px solid var(--line2);background:transparent;color:var(--fg2);
+  border:none;background:var(--surface);color:var(--fg2);
   font-size:12px;font-family:inherit;white-space:nowrap;cursor:pointer;transition:.15s;
 }
-.chip:hover{background:var(--hover);color:var(--fg)}
+.chip:hover{background:var(--lift);color:var(--fg)}
+/* 人设胶囊 = 实心强调色。**不加外发光** —— 发光是"正在发生"的信号，
+   而选中一个 skill 是常驻状态；发光留给发送键和主行动按钮就够了。 */
 .chip.active{
-  background:var(--brand-grad);border-color:transparent;color:var(--brand-fg);font-weight:500;
-  box-shadow:0 3px 12px -4px var(--brand-glow);
+  background:var(--acc);color:var(--acc-fg);font-weight:500;
 }
 .chip .tick{display:none}
 .chip.active .tick{display:block;width:12px;height:12px}
-.chip.tool{border-style:dashed;color:var(--fg3);gap:5px}
+/* 工具入口（☰/⚙）：靠**字色**区分（--fg3），不再用虚线框。
+   ⚠️ 深色下芯片条本身是 --sunken，常态胶囊是 --surface，两者明度差小 ——
+   工具入口再不给点字色差异就会「消失」。这里 --fg3 是装饰级字色，正好。 */
+.chip.tool{background:transparent;color:var(--fg3);gap:5px}
+.chip.tool:hover{background:var(--surface);color:var(--fg2)}
 
 /* ---------------------------------------------------------------- 对话区 */
 .chat{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:14px;position:relative}
 .chat::-webkit-scrollbar{width:8px}
 .chat::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px;border:2px solid transparent;background-clip:padding-box}
 
-/* 顶部吸附条：当前已推到节点的那条 */
+/* 顶部吸附条：当前已推到节点的那条
+ * ⚠️ 原来这里也有 `inset 3px 0 0 var(--acc)` —— 和提示词卡同一个毛病（左边一条颜色）。
+ * 改法：左色条换成**一枚 4px 圆点**，放在 pb-badge 之前当定位锚点；
+ * 底色回到中性面，只靠 badge 的实心紫标出"这是已推状态"。
+ * 顺带把硬编码的 rgba(255,255,255,.42) 换成 --surface —— 深色下那个白半透明会显脏。 */
 .pushed-bar{
   position:sticky;top:-16px;z-index:6;
   display:none;align-items:center;gap:9px;
   margin:-16px -20px 0;padding:9px 20px 10px;
-  background:var(--push-bar);
-  border-bottom:1px solid var(--brand-line);
-  box-shadow:inset 3px 0 0 var(--brand), 0 8px 20px -14px var(--brand-glow);
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+  box-shadow:0 8px 20px -14px var(--acc-glow);
   animation:pbin .24s cubic-bezier(.2,.8,.3,1);
 }
 .pushed-bar.show{display:flex}
 @keyframes pbin{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
-.pushed-bar .pb-badge{
-  display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:5px;flex:none;
-  background:var(--brand-grad);color:var(--brand-fg);font-size:10px;font-weight:500;
+/* 代替左色条的那枚点：只在条子左边 4px 处，不占布局（绝对定位） */
+.pushed-bar::before{
+  content:'';position:absolute;left:9px;top:50%;transform:translateY(-50%);
+  width:4px;height:4px;border-radius:50%;background:var(--acc);
 }
-.pushed-bar .pb-badge svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.pushed-bar .pb-badge{
+  display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px 0 12px;border-radius:5px;flex:none;
+  background:var(--acc-weak);border:none;   /* v7：淡紫块，同色边等于没画 */
+  color:var(--acc-weak-fg);font-size:10px;font-weight:500;
+}
+.pushed-bar .pb-badge svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap="round";stroke-linejoin="round"}
 .pushed-bar .pb-txt{
   flex:1;min-width:0;font-size:11.5px;color:var(--fg);line-height:1.4;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-prose);
 }
 .pushed-bar .pb-btn{
   flex:none;display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:6px;
-  border:1px solid var(--brand-line);background:rgba(255,255,255,.42);color:var(--brand-weak-fg);
+  border:none;background:var(--hover);color:var(--fg2);   /* v7：淡块代替描边 */
   font-size:10.5px;font-family:inherit;cursor:pointer;transition:.15s;
 }
-body.dark .pushed-bar .pb-btn{background:rgba(255,255,255,.06)}
-.pushed-bar .pb-btn:hover{background:var(--brand);border-color:transparent;color:var(--brand-fg)}
+.pushed-bar .pb-btn:hover{background:var(--acc);color:var(--acc-fg)}
 .pushed-bar .pb-x{
   flex:none;width:22px;height:22px;display:grid;place-items:center;border:none;border-radius:6px;
   background:transparent;color:var(--fg2);cursor:pointer;transition:.15s;
@@ -192,34 +216,45 @@ body.dark .pushed-bar .pb-btn{background:rgba(255,255,255,.06)}
 
 .syscap{
   align-self:center;display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;
-  background:var(--brand-weak);color:var(--brand-weak-fg);font-size:11px;border:1px solid var(--brand-line);
+  background:var(--acc-weak);color:var(--acc-weak-fg);font-size:11px;
 }
 .msg{display:flex;flex-direction:column;max-width:82%}
 .msg.me{align-self:flex-end;align-items:flex-end}
 .msg.ai{align-self:flex-start}
 .bubble{
   padding:9px 13px;border-radius:10px;font-size:13px;line-height:1.6;
-  border:1px solid transparent;word-break:break-word;
+  word-break:break-word;
 }
+/* 我的气泡：v6 起从「实心 --acc」降级为「淡紫底 + 常规字色」（无框）。
+   原因：实心紫 + 白字是全屏最强对比，比「已推入」重太多 —— 而它标记的是已经说完的话，
+   不是当前待办。降级后紫色预算集中到勾徽章 / 发送键 / skill 主胶囊三处。
+   ⚠️ 不要再加 body.dark 覆盖：深浅各自一套 --acc-ghost（tokens.css 段 C 末尾）。 */
 .msg.me .bubble{
-  background:var(--brand-grad);color:#fff;border-color:transparent;border-bottom-right-radius:3px;
-  box-shadow:0 4px 14px -8px var(--brand-glow);
+  background:var(--acc-ghost);color:var(--fg);
+  border-bottom-right-radius:3px;text-align:left;
 }
-body.dark .msg.me .bubble{color:#141414}
-.msg.ai .bubble{background:var(--card-grad);color:var(--fg);border-color:var(--line);border-bottom-left-radius:3px}
+/* 助手气泡：--surface 白面 + 无框。深色下 surface 比 bg 亮一档，靠明度差分层。 */
+.msg.ai .bubble{background:var(--surface);color:var(--fg);border-bottom-left-radius:3px;text-align:left}
 
-/* 气泡下面那条操作带：复制小图标 + 助手这条的「模型 · 耗时」 */
-.mactions{display:flex;align-items:center;gap:8px;margin-top:5px;padding:0 3px}
-/* 我发的那条气泡靠右，操作带如果跟着右对齐，图标就贴在气泡右下角、离视线远。
-   单独把操作带拉回左边缘 —— .msg.me 的宽度就是气泡宽度，所以 flex-start = 气泡左下角。 */
-.msg.me .mactions{align-self:flex-start}
+/* 气泡下面那条操作带：复制小图标 + 助手这条的「模型 · 耗时」
+   ★ 用户反馈「复制图标有的近有的远」的修法（根因不是抖动）：
+     原来 .mactions 用 `padding:0 3px`，且 .msg.me .mactions 是 align-self:flex-start ——
+     操作带**按内容宽**排、完全不跟气泡边缘对齐，.msg 又只有 max-width:82%，
+     于是气泡越长图标偏得越远（实测偏出 209px）。
+     现在改成 align-self:stretch（铺满气泡内容盒）+ 按消息方向对齐，
+     图标自然贴住气泡内缘，与首行文字末字形成一条竖线，各条消息落点一致。
+   ⚠️ 别加负外边距去「抵消」气泡内边距 —— 试过，图标会被推到气泡外侧，更糟。 */
+.mactions{display:flex;align-items:center;gap:8px;margin-top:5px;align-self:stretch;justify-content:flex-end;padding:0}
+.msg.ai .mactions{justify-content:flex-start}
 /* ⚠️ 这里必须是 .msg .mactions .mhead（三个类），不能只写 .mactions .mhead：
    下面的 `.msg .mhead` 是同样的两个类，同特异性就拼谁在后面 —— 它在下边，
    会把这个 margin-top:0 顶掉，于是文字比图标低 5px、整条歪着。 */
 .msg .mactions .mhead{margin-top:0;padding:0}
 .mcopy{
   display:inline-flex;align-items:center;justify-content:center;flex:none;
-  width:22px;height:22px;padding:0;border:none;border-radius:6px;
+  /* 22→24px：22px 在 Windows 默认缩放下热区偏小，图标在盒里居中会显飘，
+     24px 让图标和文字的光学中心更齐。 */
+  width:24px;height:24px;padding:0;border:none;border-radius:7px;
   background:transparent;color:var(--fg3);cursor:pointer;
   transition:background .15s,color .15s,transform .1s;
 }
@@ -228,78 +263,141 @@ body.dark .msg.me .bubble{color:#141414}
 /* 两个图标都在 DOM 里，露哪个由 CSS 说 —— JS 只加一个 .done，不改 display。
    跟顶栏主题按钮同一套路，省得状态两边各记一份、对不上。 */
 .mcopy .ic-done{display:none}
-.mcopy.done{color:var(--brand)}
+.mcopy.done{color:var(--acc)}
 .mcopy.done .ic-copy{display:none}
 .mcopy.done .ic-done{display:block}
 
-/* 提示词卡片 —— 被推到节点后加渐变底色 */
+/* ═══ 提示词卡片 —— v7：边界靠「面」不靠「线」 ═══
+ * v6 定的三条仍然保留：
+ *   ① 砍掉左侧 3px 色条（用户明确不要那条颜色）。
+ *   ② 标记在卡头：一枚 7px 方块，已推入时原地长成 14px 勾徽章。
+ *   ③ 已推入是一眼可辨的状态，不靠「细边」这种弱信号。
+ * v7 追加：**取消卡片外框**，改用「悬浮面 --lift」——比 --surface 亮一档，
+ * 靠明度差浮起。线框只留给浮层 / 输入框 / 焦点态三处（有硬理由）。
+ */
 .card-note{
-  margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--card-grad);
-  overflow:hidden;transition:background .25s,border-color .25s,box-shadow .25s;
+  margin-top:8px;border:none;border-radius:var(--r-card);background:var(--lift);
+  box-shadow:var(--shadow-card);
+  overflow:hidden;transition:background .2s,box-shadow .2s;
 }
+.card-note:hover{box-shadow:0 2px 8px -3px rgba(26,24,36,.22)}
+
+/* 已推入：整卡换成 --acc-ghost 淡紫大色块（20%，比「我的气泡」更明确，
+   一眼能分辨"这张推过了"），**无框**，靠一记带紫调的投影浮起。
+   ⚠️ 连带必须改的三处（漏了就会「底色有了反而更认不出」）：
+     ① 徽章：--acc-weak 淡底会隐进淡紫卡身 → 实心 --acc
+     ② 卡头：中性 --sunken 灰压在紫底上显脏 → 透明掉
+     ③ ★ v7 新增：卡底加深后，卡内的「负面词凹槽」必须跟着升一档
+        （否则出现「深底+ 浅槽」的反差倒挂，见下面 .negsec） */
 .card-note.pushed{
-  background:var(--push-grad);
-  border-color:var(--brand-line);
-  box-shadow:inset 3px 0 0 var(--brand), var(--push-ring);
+  background:var(--acc-ghost);
+  box-shadow:0 2px 10px -4px var(--acc-glow);
 }
 .card-note.flash{animation:flash 1.3s ease-out}
 @keyframes flash{
-  0%{box-shadow:inset 3px 0 0 var(--brand),0 0 0 0 var(--brand-glow)}
-  22%{box-shadow:inset 3px 0 0 var(--brand),0 0 0 6px var(--brand-glow)}
-  100%{box-shadow:inset 3px 0 0 var(--brand),var(--push-ring)}
+  0%{box-shadow:0 0 0 0 var(--acc-glow)}
+  22%{box-shadow:0 0 0 6px var(--acc-glow)}
+  100%{box-shadow:0 0 0 0 var(--acc-glow)}
 }
+
+/* 卡头层级靠**字重 + 字色**，不靠底色和下边线 —— v7 把那两条都拆了 */
 .card-note .head{
-  display:flex;align-items:center;gap:6px;padding:7px 12px;border-bottom:1px solid var(--line);
-  font-size:11px;color:var(--fg2);background:var(--sunken);transition:background .25s;
+  display:flex;align-items:center;gap:var(--s2);padding:8px 12px;
+  font-size:11px;color:var(--fg2);
 }
-.card-note.pushed .head{background:transparent}
+/* 卡头标记：常态一枚 7px 方块；已推入时**原地长成 14px 勾徽章**（同一元素换形态，不新增节点） */
+.cn-mark{
+  width:7px;height:7px;border-radius:2px;background:var(--acc);
+  flex:none;transition:width .2s,height .2s,border-radius .2s;
+}
+.card-note.pushed .cn-mark{
+  width:14px;height:14px;border-radius:4px;
+  background:var(--acc) url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/9px no-repeat;
+}
 .card-note .head .grow{flex:1}
+/* 卡头右侧：常态是很淡的字数，已推入时让位给"已推到节点"徽章 */
+.card-note .cn-kind{font-size:11px;font-weight:650;color:var(--fg);letter-spacing:.02em;flex:none}
+.card-note .cn-len{font-family:var(--font-mono);font-size:10.5px;color:var(--fg3);flex:none}
+.card-note.pushed .cn-kind{color:var(--acc-weak-fg)}   /* 推过了，卡头文字转紫 —— 和淡紫底同族 */
+/* 卡头右侧：常态是字数（很淡），已推入时换成"推到哪了" —— 比"状态"更有用。
+   ⚠️ 这里**必须**是实心 --acc：卡身变成 --acc-ghost 淡紫底之后，
+   淡紫底的徽章会整个隐进背景，"加底色"就白加了。 */
 .card-note .pushed-badge{
   display:none;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:5px;
-  background:var(--brand-grad);color:var(--brand-fg);font-size:10px;font-weight:500;
+  background:var(--acc);color:var(--acc-fg);
+  font-size:10px;font-weight:600;
 }
 .card-note.pushed .pushed-badge{display:inline-flex}
-.card-note .body{padding:10px 12px;font-size:12px;line-height:1.65;color:var(--fg2);font-family:ui-monospace,Consolas,monospace}
-.card-note .foot{display:flex;align-items:center;gap:6px;padding:7px 10px;border-top:1px solid var(--line)}
-.card-note.pushed .foot{border-top-color:var(--brand-line)}
+/* 正文（提示词本体）—— ★ 这是卡里唯一的**主信息**。v7 两处改动：
+   ① 字体换 --font-prose：提示词基本都是英文长句，Consolas 字腔窄、x 高度低、
+      读起来吃力（用户反馈"英文字体有点丑"）。真需要等宽对齐的地方
+      （字数、代码块）继续用 --font-mono。
+   ② 已推入时**转成紫**（--acc-weak-fg）：这是「主 > 辅」层级的关键，
+      详见下面 .negbody 的说明。 */
+.card-note .body{padding:2px 12px 11px;font-size:12.5px;line-height:1.72;color:var(--fg);font-family:var(--font-prose);letter-spacing:.002em}
+.card-note.pushed .body{color:var(--acc-weak-fg)}
+.card-note .foot{display:flex;align-items:center;gap:6px;padding:7px 10px}
 /* 「自动识别」角标 —— 模型没按 prompt 契约写、这一段是从 text 围栏里认出来的时候挂上。
- * 必须让它显眼到能一眼看见：否则你会以为 skill 乖乖听话了，出问题根本查不下去。 */
+ * 必须让它显眼到能一眼看见：否则你会以为 skill 乖乖听话了，出问题根本查不下去。
+ * v7：实心淡色块，不再虚线框 ——「警告」靠色块，不靠虚线。 */
 .card-note .autochip{
   display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:5px;
-  border:1px dashed var(--line2);font-size:10px;color:var(--fg3);cursor:help;
+  background:var(--warn-bg);color:var(--warn-fg);font-size:10px;cursor:help;
 }
-/* 负面词区。默认**不**参与推送（按钮在 .negrow 里，点了才把 .on 加上）。 */
-.card-note .negsec{border-top:1px dashed var(--line)}
+/* 负面词区 —— ★ v7 层级修正（用户反馈「负面词比提示词还显眼，两个颜色互换」）。
+   原来正好反过来：正文用中性灰、负面词用饱和紫 —— 紫色天然比灰跳，
+   于是**次要信息压过了主要信息**。现在分工是：
+     可读性 ← 对比度（正文紫5~7，负面词灰 ≥4.5，**都不牺牲可读性换层级**）
+     层级   ← **字号 + 色相**（正文 12.5px 紫= 主线；负面词 11.5px 灰 = 附注）
+   ⚠️ 前两版都走错了：反复想把负面词"调暗显得更轻"，结果直接跌到 2.5~3.3，
+     那是**拿可读性换层级**，负面词是要真读的内容。
+     教训：层级靠字号和色相，不靠压对比度。
+   ⚠️ 凹槽底的取法也不同：
+     浅色下若把底加深到能让 --fg2 达AA，槽差要 39+（一整块明显的深色，太重）；
+     所以浅色用「近白 --lift + 一条淡紫上边线」表达分区 ——
+     这属于「线框只留必要处」里的合理例外：卡内分区线比一整块深底更克制。
+     深色反过来：卡底本来就暗，再加深的槽差太小，所以取比卡底更暗一档的面。 */
+.card-note .negsec{background:var(--sunken)}
+.card-note.pushed .negsec{background:var(--lift);box-shadow:inset 0 1px 0 var(--acc-line)}
+.card-note .negsec.on{background:var(--acc-weak)}
+.card-note.pushed .negsec.on{background:var(--lift)}
+[data-scheme="dark"] .card-note.pushed .negsec{background:var(--sunken);box-shadow:none}
+[data-scheme="dark"] .card-note.pushed .negsec.on{background:var(--sunken)}
 .card-note .negrow{
-  display:flex;align-items:center;gap:6px;padding:6px 12px;font-size:11px;color:var(--fg2);
+  display:flex;align-items:center;gap:6px;padding:7px 12px 6px;font-size:11px;color:var(--fg2);
 }
 .card-note .negrow .dim{color:var(--fg3)}
 .card-note .negbody{
-  padding:0 12px 9px;font-size:11.5px;line-height:1.6;color:var(--fg3);
-  font-family:ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;
+  padding:0 12px 9px;font-size:11.5px;line-height:1.65;color:var(--fg2);
+  font-family:var(--font-prose);white-space:pre-wrap;word-break:break-word;
   max-height:110px;overflow:auto;
 }
-.card-note .negsec.on{border-top-color:var(--brand-line);background:var(--sunken)}
-.card-note .negsec.on .negbody{color:var(--fg2)}
-.card-note .negsw.on{color:var(--brand);border-color:var(--brand-line)}
-/* 过程折叠区 —— 用户要的是"过程别占正文"，但内容一个字都不删，折起来就好。 */
-.procbox{margin-top:6px;border:1px solid var(--line);border-radius:8px;background:var(--sunken)}
-.procbox>summary{padding:7px 10px;font-size:11px;color:var(--fg3);cursor:pointer;list-style:none}
-.procbox>summary::-webkit-details-marker{display:none}
-.procbox>summary::before{content:"\25B8\00a0"}
+.card-note .negsw.on{color:var(--acc)}
+/* 过程折叠区 —— 用户要的是"过程别占正文"，但内容一个字都不删，折起来就好。
+   v7：凹槽块，无框。 */
+.procbox{margin-top:6px;border-radius:8px;background:var(--sunken);overflow:hidden}
+/* 已推卡里跟着负面词区同一套取法（浅色近白 + 分区线，深色更暗一档），别各写各的 */
+.card-note.pushed .procbox{background:var(--lift);box-shadow:inset 0 1px 0 var(--acc-line)}
+[data-scheme="dark"] .card-note.pushed .procbox{background:var(--sunken);box-shadow:none}
 .procbox[open]>summary::before{content:"\25BE\00a0"}
 .procbox .codeblock{
   border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;max-height:220px;
 }
 .mini{
   display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:6px;
-  border:1px solid var(--line2);background:transparent;color:var(--fg2);font-size:11px;font-family:inherit;cursor:pointer;transition:.15s;
+  border:none;background:var(--hover);color:var(--fg2);font-size:11px;font-family:inherit;cursor:pointer;transition:.15s;
 }
-.mini:hover{background:var(--hover);color:var(--fg)}
-.mini.primary{background:var(--brand-grad);border-color:transparent;color:var(--brand-fg);box-shadow:0 3px 12px -5px var(--brand-glow)}
+.mini:hover{background:var(--sunken);color:var(--fg)}
+.mini.primary{background:var(--acc);color:var(--acc-fg);box-shadow:0 3px 12px -5px var(--acc-glow)}
 .mini.primary:hover{opacity:.9}
 .mini:disabled{opacity:.45;cursor:not-allowed}
-.mini.done{color:var(--brand);border-color:var(--brand-line)}
+.mini.done{color:var(--acc-weak-fg);background:var(--hover)}
+/* 卡片底已经是淡紫底了，.done 按钮再用紫底会糊在一起 —— 给回白底才分得清层级。
+   ⚠️ 用 --lift 而不是 --surface：卡片未推态是「悬浮面 --lift」，已推态整卡变紫，
+   .done 按钮在两种卡底上都该读作「浮在卡上的一小块白」；
+   边框按 v7 收敛掉（淡紫边在紫底上分不出层次）。 */
+.card-note.pushed .mini.done{background:var(--lift);color:var(--acc-weak-fg)}
+.card-note.pushed .mini.done:hover{background:var(--acc);color:var(--acc-fg)}
 
 /* ------------------------------------------------- 图片条（反推，2026-09-23） */
 /* ⚠️ `[hidden]` 那条兜底不能删 —— 下面给了 display:flex（作者样式），
@@ -307,11 +405,11 @@ body.dark .msg.me .bubble{color:#141414}
 .imgstrip[hidden]{display:none}
 .imgstrip{
   flex:none;display:flex;align-items:center;gap:10px;padding:8px 12px;
-  border-top:1px solid var(--line);background:var(--bar-grad);
+  background:var(--drawer);            /* v7：靠「比面板略深的面」区分，不画顶线 */
 }
 .imgstrip .ithumb{
   width:52px;height:52px;flex:none;object-fit:cover;border-radius:8px;
-  border:1px solid var(--line2);background:var(--card);
+  border:1px solid var(--line2);background:var(--surface);
 }
 .imgstrip .imeta{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
 .imgstrip .imeta b{font-size:12px;font-weight:500;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -325,7 +423,7 @@ body.dark .msg.me .bubble{color:#141414}
   font-size:11.5px;font-family:inherit;cursor:pointer;transition:.15s;white-space:nowrap;
 }
 .imgstrip .intent-b:hover{border-color:var(--line);color:var(--fg2)}
-.imgstrip .intent-b.on{background:var(--brand-weak);border-color:var(--brand-line);color:var(--brand-weak-fg)}
+.imgstrip .intent-b.on{background:var(--acc-weak);border-color:var(--acc-line);color:var(--acc-weak-fg)}
 .imgstrip .intent-b.dis{opacity:.4;cursor:not-allowed}
 /* 用户气泡上方那张图：平时小图，鼠标停上去放大看清楚 —— 靠 CSS，不加 JS */
 .ubimg{margin-bottom:6px;max-width:min(240px,100%)}
@@ -342,7 +440,7 @@ body.dark .msg.me .bubble{color:#141414}
 /* ------------------------------------------------------ 输入区（可拖高） */
 .composer{
   flex:none;display:flex;align-items:flex-end;gap:8px;padding:10px 12px;
-  border-top:1px solid var(--line);background:var(--bar-grad);backdrop-filter:blur(12px);position:relative;z-index:2;
+  background:var(--surface);position:relative;z-index:2;
 }
 .composer textarea{
   flex:1;min-height:38px;max-height:300px;resize:vertical;
@@ -351,15 +449,15 @@ body.dark .msg.me .bubble{color:#141414}
   padding:9px 12px;outline:none;transition:border-color .15s,background .15s,box-shadow .15s;
 }
 .composer textarea::placeholder{color:var(--fg3)}
-.composer textarea:focus{border-color:var(--brand);background:var(--card);box-shadow:0 0 0 3px var(--brand-weak)}
+.composer textarea:focus{border-color:var(--acc);background:var(--surface);box-shadow:0 0 0 3px var(--acc-weak)}
 .composer textarea::-webkit-resizer{
   background:linear-gradient(135deg,transparent 46%,var(--fg3) 46%,var(--fg3) 54%,transparent 54%),
              linear-gradient(135deg,transparent 66%,var(--fg3) 66%,var(--fg3) 74%,transparent 74%);
   border-bottom-right-radius:8px;
 }
 .send{
-  width:38px;height:38px;flex:none;border-radius:8px;border:none;background:var(--brand-grad);color:var(--brand-fg);
-  display:grid;place-items:center;cursor:pointer;transition:.15s;box-shadow:0 4px 14px -6px var(--brand-glow);
+  width:38px;height:38px;flex:none;border-radius:8px;border:none;background:var(--acc);color:var(--acc-fg);
+  display:grid;place-items:center;cursor:pointer;transition:.15s;box-shadow:0 4px 14px -6px var(--acc-glow);
 }
 .send:hover{opacity:.9}
 .resize-hint{font-size:10px;color:var(--fg3);flex:none;align-self:center;white-space:nowrap}
@@ -378,24 +476,28 @@ body.dark .msg.me .bubble{color:#141414}
 .skdemo b{font-weight:600}
 
 /* ------------------------------------------------------------------ 弹层 */
+/* ═══ 弹层：头 / 体 / 脚 三段节奏（P5）═══
+ * 三段共用 --s3 --s4 两个内距档，谁都不许自己另写数字 ——
+ * 一旦某个弹层单独拍了个 padding，几个弹层并排看就会歪。 */
 .mask{
   position:fixed;inset:0;z-index:80;display:none;
-  align-items:center;justify-content:center;padding:24px;
-  background:rgba(20,16,40,.46);backdrop-filter:blur(3px);
+  align-items:center;justify-content:center;padding:var(--s5);
+  background:var(--scrim);backdrop-filter:blur(3px);
 }
 .mask.open{display:flex}
 .sheet{
-  width:100%;border-radius:12px;border:1px solid var(--line);
-  background:var(--panel-bg);box-shadow:0 24px 70px -20px rgba(30,20,70,.5);
+  width:100%;border-radius:var(--r-card);border:1px solid var(--line2);
+  background:var(--surface);box-shadow:var(--shadow-pop);
   display:none;flex-direction:column;overflow:hidden;max-height:100%;
 }
 .sheet.skills{max-width:760px;height:560px}
 .sheet.lib{max-width:820px;height:540px}
 .sheet.open{display:flex}
 .sheet-head{
-  flex:none;display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--bar-grad);
+  flex:none;display:flex;align-items:center;gap:10px;
+  padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);background:var(--surface);
 }
-.sheet-head h2{font-size:15px;font-weight:500;white-space:nowrap}
+.sheet-head h2{font-size:14.5px;font-weight:500;letter-spacing:-.015em;white-space:nowrap}
 .sheet-head .grow{flex:1}
 .search{
   display:flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:8px;
@@ -407,17 +509,17 @@ body.dark .msg.me .bubble{color:#141414}
 .search input::placeholder{color:var(--fg3)}
 .tbtn{
   display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;
-  border:1px solid var(--line2);background:var(--card-grad);color:var(--fg);font-size:12px;
+  border:1px solid var(--line2);background:var(--surface);color:var(--fg);font-size:12px;
   font-family:inherit;cursor:pointer;transition:.15s;
 }
 .tbtn:hover{background:var(--hover)}
-.tbtn.on{background:var(--brand-grad);border-color:transparent;color:var(--brand-fg);box-shadow:0 3px 12px -4px var(--brand-glow)}
+.tbtn.on{background:var(--acc);border-color:transparent;color:var(--acc-fg);box-shadow:0 3px 12px -4px var(--acc-glow)}
 .tbtn.sm{height:26px;padding:0 10px;font-size:11.5px}
 .sheet-body{flex:1;display:flex;min-height:0}
 
 /* skill 弹层 */
 .side{
-  width:132px;flex:none;border-right:1px solid var(--line);padding:10px 8px;background:var(--card-grad);
+  width:132px;flex:none;border-right:1px solid var(--line);padding:10px 8px;background:var(--surface);
   display:flex;flex-direction:column;gap:2px;overflow-y:auto;
 }
 .cat{
@@ -426,21 +528,22 @@ body.dark .msg.me .bubble{color:#141414}
   cursor:pointer;text-align:left;width:100%;transition:.15s;
 }
 .cat:hover{background:var(--hover);color:var(--fg)}
-.cat.active{background:var(--brand-weak);color:var(--brand-weak-fg);font-weight:500}
+.cat.active{background:var(--acc-weak);color:var(--acc-weak-fg);font-weight:500}
 .grid{
   flex:1;overflow-y:auto;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;
 }
 .grid::-webkit-scrollbar{width:8px}
 .grid::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px;border:2px solid transparent;background-clip:padding-box}
 .skcard{
-  position:relative;border:1px solid var(--line);border-radius:10px;background:var(--card-grad);
+  position:relative;border:none;border-radius:10px;background:var(--lift);
+  box-shadow:var(--shadow-card);
   padding:12px 13px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:6px;
 }
-.skcard:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 8px 20px -14px rgba(40,32,90,.35)}
-.skcard.master{border-color:transparent;background:var(--brand-weak);box-shadow:inset 0 0 0 1px var(--brand-line)}
+.skcard:hover{transform:translateY(-1px);box-shadow:0 8px 20px -14px rgba(40,32,90,.35)}
+.skcard.master{background:var(--acc-weak)}
 .skcard .row{display:flex;align-items:center;gap:8px}
 .skcard .name{font-size:13px;font-weight:500;color:var(--fg)}
-.skcard.master .name{color:var(--brand-weak-fg)}
+.skcard.master .name{color:var(--acc-weak-fg)}
 .skcard .desc{font-size:11px;color:var(--fg2);line-height:1.55}
 .skcard .ico{width:28px;height:28px;border-radius:7px;background:var(--sunken);display:grid;place-items:center;color:var(--fg2);flex:none}
 .skcard .skfoot{display:flex;align-items:center;gap:6px;margin-top:2px}
@@ -450,15 +553,15 @@ body.dark .msg.me .bubble{color:#141414}
   height:20px;padding:0 8px;border-radius:5px;border:1px solid var(--line2);background:transparent;
   color:var(--fg2);font-size:10px;font-family:inherit;cursor:pointer;transition:.15s;white-space:nowrap;
 }
-.skcard .see:hover{background:var(--brand-weak);border-color:var(--brand-line);color:var(--brand-weak-fg)}
+.skcard .see:hover{background:var(--acc-weak);border-color:var(--acc-line);color:var(--acc-weak-fg)}
 .skcard .badge-ai{
   height:18px;padding:0 6px;border-radius:4px;background:var(--warn-bg);border:1px solid var(--warn-line);
   color:var(--warn-fg);font-size:9.5px;display:inline-flex;align-items:center;white-space:nowrap;
 }
 /* 吃图标记：声明了 reference 的 skill，拖图弹窗默认会高亮"交给 skill" */
 .skcard .badge-eat{
-  height:18px;padding:0 6px;border-radius:4px;background:var(--brand-weak);border:1px solid var(--brand-line);
-  color:var(--brand-weak-fg);font-size:9.5px;display:inline-flex;align-items:center;white-space:nowrap;
+  height:18px;padding:0 6px;border-radius:4px;background:var(--acc-weak);border:none;
+  color:var(--acc-weak-fg);font-size:9.5px;display:inline-flex;align-items:center;white-space:nowrap;
 }
 /* 已禁用标记 */
 .skcard .badge-off{
@@ -483,20 +586,20 @@ body.dark .msg.me .bubble{color:#141414}
 .skcard .toggle:hover{border-color:var(--line)}
 .skcard .toggle.on{background:rgba(34,197,94,.20);border-color:rgba(34,197,94,.55)}
 .skcard .toggle.on::after{left:2px;background:#22c55e}
-.skcard.master .ico{background:var(--brand-grad);color:#fff}
-body.dark .skcard.master .ico{color:#141414}
+.skcard.master .ico{background:var(--acc);color:var(--acc-fg)}
 .flag{
   position:absolute;top:11px;right:11px;display:inline-flex;align-items:center;gap:4px;
-  height:20px;padding:0 7px;border-radius:5px;font-size:10px;background:var(--brand-grad);color:var(--brand-fg);
+  height:20px;padding:0 7px;border-radius:5px;font-size:10px;background:var(--acc);color:var(--acc-fg);
 }
 .mark{
   position:absolute;top:11px;right:11px;width:18px;height:18px;border-radius:50%;
   border:1.5px solid var(--line2);display:grid;place-items:center;color:transparent;transition:.15s;
 }
-.mark:hover{border-color:var(--brand);color:var(--fg3)}
-.skcard.ref .mark{background:var(--brand-grad);border-color:transparent;color:var(--brand-fg)}
+.mark:hover{border-color:var(--acc);color:var(--fg3)}
+.skcard.ref .mark{background:var(--acc);border-color:transparent;color:var(--acc-fg)}
 .sheet-foot{
-  flex:none;display:flex;align-items:center;gap:10px;padding:11px 16px;border-top:1px solid var(--line);background:var(--bar-grad);
+  flex:none;display:flex;align-items:center;gap:10px;
+  padding:var(--s2) var(--s4);border-top:1px solid var(--line);background:var(--surface);
 }
 .sheet-foot .hint{font-size:11px;color:var(--fg3);flex:1}
 
@@ -504,7 +607,7 @@ body.dark .skcard.master .ico{color:#141414}
 .sheet.skview{max-width:780px;height:640px}
 .tagpill{
   display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:10px;
-  background:var(--brand-weak);color:var(--brand-weak-fg);border:1px solid var(--brand-line);font-size:10.5px;
+  background:var(--acc-weak);color:var(--acc-weak-fg);border:1px solid var(--acc-line);font-size:10.5px;
 }
 .skv-wrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding:14px 16px}
 .skv-stats{display:flex;flex-wrap:wrap;gap:6px}
@@ -532,26 +635,26 @@ body.dark .skcard.master .ico{color:#141414}
 /* 词库弹层（左列表 + 右详情） */
 .lib-body{flex:1;display:flex;min-height:0}
 .lib-list{
-  width:310px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--card-grad);
+  width:310px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--surface);
 }
 .lib-cats{
   flex:none;display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;
 }
 .lib-cats::-webkit-scrollbar{display:none}
 .lcat{
-  height:24px;padding:0 10px;border-radius:12px;border:1px solid var(--line2);background:transparent;
+  height:24px;padding:0 10px;border-radius:12px;border:none;background:var(--sunken);
   color:var(--fg2);font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap;transition:.15s;
 }
-.lcat:hover{background:var(--hover)}
-.lcat.active{background:var(--brand-grad);border-color:transparent;color:var(--brand-fg)}
+.lcat:hover{background:var(--hover);color:var(--fg)}
+.lcat.active{background:var(--acc);color:var(--acc-fg)}
 .lib-items{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:4px}
 .lib-items::-webkit-scrollbar{width:8px}
 .lib-items::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px;border:2px solid transparent;background-clip:padding-box}
 .lrow{border:1px solid transparent;border-radius:8px;padding:9px 10px;cursor:pointer;transition:.15s}
 .lrow:hover{background:var(--hover)}
-.lrow.active{background:var(--brand-weak);border-color:var(--brand-line)}
+.lrow.active{background:var(--acc-weak)}
 .lrow .n{font-size:12px;font-weight:500;color:var(--fg);display:flex;align-items:center;gap:6px;margin-bottom:4px}
-.lrow.active .n{color:var(--brand-weak-fg)}
+.lrow.active .n{color:var(--acc-weak-fg)}
 .lrow .m{font-size:10px;color:var(--fg3);margin-bottom:4px}
 .lrow .p{
   font-size:11px;color:var(--fg2);line-height:1.5;
@@ -565,7 +668,7 @@ body.dark .skcard.master .ico{color:#141414}
   height:32px;border-radius:8px;border:1px solid var(--line2);background:var(--sunken);
   color:var(--fg);font-family:inherit;font-size:12px;padding:0 11px;outline:none;transition:.15s;
 }
-.field input:focus{border-color:var(--brand);background:var(--card);box-shadow:0 0 0 3px var(--brand-weak)}
+.field input:focus{border-color:var(--acc);background:var(--surface);box-shadow:0 0 0 3px var(--acc-weak)}
 
 /* 模型框 = 标准 combobox：输入框**内部**右侧一个清空 ×、一个下拉箭头。
  * 不在旁边另挂按钮 —— 「拉取」藏在箭头里（没拉过就先拉一次），
@@ -591,19 +694,19 @@ body.dark .skcard.master .ico{color:#141414}
 /* 图标本身比别处大一档：它是这个框唯一的功能入口，含糊了就等于没有 */
 .cbx .ic,.cbar .ic{width:15px;height:15px}
 .cbar .ic{transition:transform .16s}
-.combo.open .cbar{color:var(--brand)}
+.combo.open .cbar{color:var(--acc)}
 .combo.open .cbar .ic{transform:rotate(180deg)}
 .lib-detail textarea{
   flex:1;min-height:120px;resize:none;border-radius:8px;border:1px solid var(--line2);
   background:var(--sunken);color:var(--fg);font-family:ui-monospace,Consolas,monospace;font-size:12px;
   line-height:1.6;padding:10px 12px;outline:none;transition:.15s;
 }
-.lib-detail textarea:focus{border-color:var(--brand);background:var(--card);box-shadow:0 0 0 3px var(--brand-weak)}
+.lib-detail textarea:focus{border-color:var(--acc);background:var(--surface);box-shadow:0 0 0 3px var(--acc-weak)}
 .lib-acts{display:flex;gap:6px;justify-content:flex-end}
 
 /* ------------------------------------------------------------ 会话抽屉 */
 .drawer{
-  position:fixed;top:0;left:0;bottom:0;width:min(300px,100%);z-index:90;background:var(--drawer-bg);
+  position:fixed;top:0;left:0;bottom:0;width:min(300px,100%);z-index:90;background:var(--drawer);
   border-right:1px solid var(--line);box-shadow:0 20px 60px -20px rgba(0,0,0,.5);
   transform:translateX(-100%);transition:transform .2s;display:flex;flex-direction:column;
 }
@@ -614,12 +717,12 @@ body.dark .skcard.master .ico{color:#141414}
 .convlist{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px}
 .conv{position:relative;border:1px solid transparent;border-radius:9px;padding:9px 11px;cursor:pointer;transition:.15s}
 .conv:hover{background:var(--hover)}
-.conv.active{background:var(--brand-weak);border-color:var(--brand-line)}
+.conv.active{background:var(--acc-weak);border-color:var(--acc-line)}
 .conv .name{font-size:13px;font-weight:500;color:var(--fg);margin-bottom:5px;padding-right:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.conv.active .name{color:var(--brand-weak-fg)}
+.conv.active .name{color:var(--acc-weak-fg)}
 .conv .meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fg3)}
 .conv .cbadge{height:16px;padding:0 6px;border-radius:5px;background:var(--sunken);color:var(--fg2);display:grid;place-items:center;font-size:10px}
-.conv.active .cbadge{background:var(--brand-grad);color:var(--brand-fg)}
+.conv.active .cbadge{background:var(--acc);color:var(--acc-fg)}
 .conv .cbtn{position:absolute;top:7px;right:7px;width:22px;height:22px;border-radius:6px;border:none;background:transparent;color:var(--fg3);display:none;place-items:center;cursor:pointer}
 .conv:hover .cbtn{display:grid}
 .conv .cbtn:hover{background:var(--line);color:var(--fg)}
@@ -702,11 +805,8 @@ body.dark .toast .tact:hover{background:rgba(0,0,0,.08);border-color:rgba(0,0,0,
    阶段 2 新增：真实对话 / 后端设置 / 会话管理
    ================================================================== */
 
-/* 补充几个语义色。放这里而不是改上面那两块，是为了让"阶段 2 加了什么"一眼可查 */
-:root{--err-bg:rgba(214,69,69,.07);--err-line:rgba(214,69,69,.28);--err-fg:#C4342F;
-      --ok-bg:rgba(29,158,117,.08);--ok-line:rgba(29,158,117,.28)}
-body.dark{--err-bg:rgba(255,120,120,.10);--err-line:rgba(255,120,120,.30);--err-fg:#FF9B9B;
-      --ok-bg:rgba(93,202,165,.10);--ok-line:rgba(93,202,165,.30)}
+/* 语义色（--err-* / --ok-* / --warn-*）在阶段 2 加的，现已并入 tokens.css 段 B，
+   本文件不再重复声明 —— 否则两处写死值会打架，且主题切换切不到它们。 */
 
 /* ---------------------------------------------------------------- 消息流 */
 .msgs{display:flex;flex-direction:column;gap:14px}
@@ -731,13 +831,13 @@ body.mode-modal .msgs{width:100%;max-width:860px;margin:0 auto}
 /* 流式生成时的光标 —— 让你知道它还在吐字，而不是卡住了 */
 .msg.streaming .bubble::after{
   content:"";display:inline-block;width:6px;height:13px;margin-left:3px;vertical-align:-2px;
-  background:var(--brand);animation:caret 1s steps(2,end) infinite;
+  background:var(--acc);animation:caret 1s steps(2,end) infinite;
 }
 @keyframes caret{0%,60%{opacity:1}61%,100%{opacity:0}}
 
 .thinkline{
   align-self:flex-start;margin-bottom:6px;padding:5px 10px;border-radius:8px;
-  background:var(--brand-weak);border:1px dashed var(--brand-line);color:var(--brand-weak-fg);
+  background:var(--acc-weak);border:1px dashed var(--acc-line);color:var(--acc-weak-fg);
   font-size:11px;
 }
 .thinkbox{margin-bottom:6px;max-width:100%;font-size:11px;color:var(--fg3)}
@@ -775,14 +875,23 @@ body.dark .errbox code{background:rgba(255,255,255,.08)}
   border:1px dashed var(--line);background:var(--sunken);
 }
 .reftitle{margin-bottom:9px;font-size:12px;font-weight:600;color:var(--fg2)}
+/* ═══ Skill 两级：人设实心 / 参考虚线 ═══
+ * 分级的依据是**作用**，不是选中与否：人设决定输出格式（单选、一言九鼎），
+ * 参考只往上下文里加料（多选、可有可无）。所以常态就该分出轻重 ——
+ * 全都画成一样的实心胶囊，用户就得逐个点开才知道哪个是哪个。
+ * ⚠️ 选中态一律改成**实线 + 淡底**：虚线 + 实色底叠在一起会糊成一团。 */
 .refchips{display:flex;flex-wrap:wrap;gap:6px}
 .refchip{
-  max-width:220px;height:26px;padding:0 11px;border-radius:13px;border:1px solid var(--line);
-  background:var(--card-grad);color:var(--fg2);font-size:11.5px;cursor:pointer;transition:.15s;
+  max-width:220px;height:26px;padding:0 11px;border-radius:13px;
+  border:1px dashed var(--line2);background:transparent;
+  color:var(--fg2);font-size:11.5px;cursor:pointer;transition:.15s;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.refchip:hover{border-color:var(--brand-line);color:var(--fg)}
-.refchip.on{background:var(--brand-weak);border-color:var(--brand-line);color:var(--brand-weak-fg)}
+.refchip:hover{border-color:var(--acc-line);color:var(--fg)}
+.refchip.on{
+  border-style:solid;border-color:var(--acc-line);
+  background:var(--acc-weak);color:var(--acc-weak-fg);
+}
 .refempty{font-size:11.5px;color:var(--fg3)}
 .refnote{margin-top:9px;font-size:10.5px;line-height:1.65;color:var(--fg3)}
 
@@ -790,7 +899,7 @@ body.dark .errbox code{background:rgba(255,255,255,.08)}
 .pill{cursor:pointer}
 .pill.ok .dot{background:var(--ok)}
 .pill.bad .dot{background:var(--err-fg)}
-.send.stopping{background:var(--brand);color:var(--brand-fg)}
+.send.stopping{background:var(--acc);color:var(--acc-fg)}
 
 .sheet.cfg{width:min(720px,94vw);height:auto;max-height:calc(100% - 24px)}
 .cfg-body{
@@ -800,12 +909,12 @@ body.dark .errbox code{background:rgba(255,255,255,.08)}
 .cfg-body label{font-size:11.5px;line-height:1.5;color:var(--fg2)}
 .cfg-body label code{padding:0 4px;border-radius:4px;background:var(--sunken);color:var(--fg)}
 .cfg-body input,.cfg-body select,.cfg-body textarea{
-  height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--card-grad);
+  height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);
   color:var(--fg);font-size:12.5px;font-family:inherit;outline:none;transition:.15s;
 }
 .cfg-body textarea{height:auto;min-height:66px;padding:8px 10px;line-height:1.6;resize:vertical}
 .cfg-body input:focus,.cfg-body select:focus,.cfg-body textarea:focus{
-  border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-weak);
+  border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-weak);
 }
 .cfg-presets{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .cfg-lbl{font-size:11.5px;color:var(--fg3)}
@@ -838,7 +947,7 @@ body.dark .errbox code{background:rgba(255,255,255,.08)}
 body.dark .cfg-status code{background:rgba(255,255,255,.08)}
 .cfg-status.ok{background:var(--ok-bg);border-color:var(--ok-line);color:var(--fg)}
 .cfg-status.err{background:var(--err-bg);border-color:var(--err-line);color:var(--fg)}
-.cfg-status.busy{background:var(--brand-weak);border-color:var(--brand-line)}
+.cfg-status.busy{background:var(--acc-weak);border-color:var(--acc-line)}
 
 /* 窄屏：抽屉那三个操作按钮直接显示 —— 触屏没有 hover 这回事 */
 @media (max-width:720px){
@@ -859,8 +968,8 @@ body.dark .cfg-status code{background:rgba(255,255,255,.08)}
 /* 「写适配」模式的说明条。两个入口共用一套编辑器，全靠这条把"这次改的是什么、
    保存会写到哪"说清楚。用品牌色而不是警告色 —— 它是正常模式，不是有风险的操作。 */
 .sbanner{
-  padding:9px 11px;border-radius:9px;border:1px solid var(--brand-line);
-  background:var(--brand-weak);color:var(--brand-weak-fg);font-size:11.5px;line-height:1.6;
+  padding:9px 11px;border-radius:9px;border:1px solid var(--acc-line);
+  background:var(--acc-weak);color:var(--acc-weak-fg);font-size:11.5px;line-height:1.6;
 }
 /* ⚠️ 必须显式写：作者样式会盖掉 hidden 自带的 UA 样式 display:none
    （跟 .addpreset / .cbx 是同一个坑，见过三次了） */
@@ -881,7 +990,7 @@ body.dark .sbanner code{background:rgba(255,255,255,.08)}
 .adv summary::before{content:"▸ ";color:var(--fg3)}
 .adv[open] summary::before{content:"▾ "}
 .chk{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--fg2);cursor:pointer;user-select:none}
-.chk input{width:14px;height:14px;flex:none;accent-color:var(--brand)}
+.chk input{width:14px;height:14px;flex:none;accent-color:var(--acc)}
 
 /* 设置里「全局提示词」的快捷开关。符号用 ::before 画，是为了激活时
    只换字符不换宽度 —— 直接改文字会让整排 chip 重新排版、跳一下。
@@ -892,15 +1001,15 @@ body.dark .sbanner code{background:rgba(255,255,255,.08)}
   border:1px solid var(--line2);background:transparent;color:var(--fg2);cursor:pointer;
   white-space:nowrap;transition:color .15s,border-color .15s,background .15s}
 #extraChips .chip::before{content:"+ ";color:var(--fg3)}
-#extraChips .chip.on::before{content:"✓ ";color:var(--brand)}
+#extraChips .chip.on::before{content:"✓ ";color:var(--acc)}
 #extraChips .chip:hover{background:var(--hover);color:var(--fg)}
-#extraChips .chip.on{border-color:var(--brand);color:var(--brand)}
+#extraChips .chip.on{border-color:var(--acc);color:var(--acc)}
 
 /* 卡片右下那个「···」菜单。挂在 body 上按点击点定位，所以不跟着卡片滚动 —— 点一下就关。 */
 .skcard .see.more{padding:0 8px;font-weight:700;letter-spacing:1px}
 .skmenu{
   position:fixed;z-index:90;min-width:210px;padding:5px;
-  background:var(--card);border:1px solid var(--line2);border-radius:10px;
+  background:var(--surface);border:1px solid var(--line2);border-radius:10px;
   box-shadow:0 16px 40px -14px rgba(30,22,70,.45);
   display:flex;flex-direction:column;gap:2px;
 }
@@ -917,7 +1026,7 @@ body.dark .sbanner code{background:rgba(255,255,255,.08)}
 .skmi.hint:hover{background:transparent}
 
 /* 当前选中的那个（模型清单里用） */
-.skmi.on{background:var(--brand-weak);color:var(--brand);font-weight:600}
+.skmi.on{background:var(--acc-weak);color:var(--acc);font-weight:600}
 
 /* 清单底部那行「重新拉取」——比模型名淡一档，别抢注意力 */
 .skmi.refresh{
@@ -935,7 +1044,7 @@ body.dark .sbanner code{background:rgba(255,255,255,.08)}
   padding:7px 9px;border:1px solid var(--line2);border-radius:7px;
   background:var(--sunken);color:var(--fg);font-size:12px;font-family:inherit;outline:none;
 }
-.sksearch:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-weak)}
+.sksearch:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-weak)}
 .sklist{max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:2px}
 
 /* 框里的模型名不在刚拉到的清单里（多半是从别的服务带过来的残留）→ 标出来 */
@@ -952,18 +1061,18 @@ body.dark .sbanner code{background:rgba(255,255,255,.08)}
   border:1px solid transparent;border-radius:7px;cursor:pointer;transition:.12s;
 }
 .improw:hover{background:var(--hover)}
-.improw.on{background:var(--brand-weak);border-color:var(--brand-line)}
+.improw.on{background:var(--acc-weak);border-color:var(--acc-line)}
 .impbox{
   width:15px;height:15px;flex:none;margin-top:1px;border-radius:4px;
   border:1.5px solid var(--line2);display:grid;place-items:center;
-  font-size:10px;font-weight:700;color:var(--brand-fg);
+  font-size:10px;font-weight:700;color:var(--acc-fg);
 }
-.improw.on .impbox{background:var(--brand-grad);border-color:transparent}
+.improw.on .impbox{background:var(--acc);border-color:transparent}
 .imp-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .imp-name{font-size:12px;color:var(--fg);display:flex;align-items:center;gap:6px}
 .imp-exists{
   font-size:9.5px;font-weight:400;padding:1px 6px;border-radius:4px;
-  background:var(--card);border:1px solid var(--line2);color:var(--fg3);
+  background:var(--surface);border:1px solid var(--line2);color:var(--fg3);
 }
 .imp-desc{font-size:10.5px;color:var(--fg3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .imp-meta{font-size:10px;color:var(--fg3);flex:none;padding-top:2px}

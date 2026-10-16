@@ -1,0 +1,15 @@
+{
+  "name": "巨构提示词 (Krea 2)",
+  "category": "插画",
+  "icon": "image",
+  "inject": [
+    "SKILL.md",
+    "references/scene-playbooks.md",
+    "references/layer-vocabulary.md",
+    "references/style-presets.md",
+    "assets/prompt-library.md"
+  ],
+  "strip_sections": [],
+  "strip_lines": [],
+  "_note": "巨构 / 超尺度结构类生图提示词生成器，针对 Krea 2 模型。\n\n来源：用户从「俊熙Echo-海报工作流」提供，原包自带 README.md（WorkBuddy 用户级安装说明，未 inject，因为 WindWhisper 不走那种安装方式）。\n\n⚠️ 这个 skill 的 SKILL.md 是**纯导航**——真正的七层词库、场景剧本、风格预设、提示词种子分别在 references/ 与 assets/ 里。按 skills/README.md 第 132-134 行的硬规则，必须把这四个文件全部显式写进 inject，否则模型只拿到导航、规范一个字节都进不来。\n\n已确认 SKILL.md 无 python/pip/终端运行类操作指令，不需要 strip。inject 顺序：SKILL.md（方法论导航）在前，references（词库/剧本/预设）居中，assets/prompt-library.md（30 条现成提示词种子）置后。"
+}

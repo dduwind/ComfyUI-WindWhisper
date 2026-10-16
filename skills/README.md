@@ -33,6 +33,7 @@
 | `female-portrait-director` | 来源明确，**按上游 MIT 条款合法收录**（作者李岳）—— 见下方说明 |
 | `h3-prompt-writing` | **MiniMax 官方**，原样取自 `MiniMax-AI/MiniMax-H3` |
 | `Qwen-Image-2.1-PE-T2I`、`Qwen-Image-2.1-PE-I2I` | **Qwen（阿里）官方**，取自 Image Prompt Enhancer 的文生图 / 图像编辑 system prompt |
+| `krea2-megastructure-prompts` | 用户提供（来自「俊熙Echo-海报工作流」），巨构 / 超尺度结构生图提示词，针对 Krea 2 模型。子目录自带 `README.md` 为 WorkBuddy 安装说明，**未 inject** |
 
 ### 只有这三个 skill 另带声明文件
 
@@ -61,6 +62,7 @@
 | `Qwen-Image-2.1-PE-T2I` | 通用 | Qwen 文生图提示词改写 · **第三方** |
 | `roger-deakins-cinematography` | 摄影 | 迪金斯电影摄影知识库 |
 | `seedance-tvc-director` | 视频 | TVC 导演 |
+| `krea2-megastructure-prompts` | 插画 | 巨构 / 超尺度结构提示词（Krea 2）· 七层公式 + 场景剧本 + 风格预设 + 提示词库 |
 
 `female-portrait-director` 和 `prompt-generator` 显示体积大，是因为原文带了大量参考文件 ——
 **只有适配层 `inject` 里声明过的文件才会真正进 system prompt**，其余只是躺在磁盘上。

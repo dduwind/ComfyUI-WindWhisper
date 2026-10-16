@@ -1,0 +1,300 @@
+/* WindWhisper 面板 · 设计令牌
+ *
+ * ⚠️ 这个页面跑在 iframe 里，**拿不到 ComfyUI 的主题变量**。
+ *    所以色值全部写死在这里，深色由 [data-scheme="dark"] 切换。
+ *    不要引用 ComfyUI 的主题变量（--bg-color / --fg-color 这类），在这里会得到空值。
+ *
+ * ── 结构（P1 起分三族，改色只动这三段，版式一行不用碰）──────────
+ *   段 A  几何 / 排版：圆角、间距、字体
+ *   段 B  中性色阶：scheme（明暗）× tint（冷暖墨）
+ *   段 C  强调色：accent 四色系 × 明暗
+ *
+ * ── 主题属性挂在哪 ────────────────────────────────────────────
+ *   挂在 **body** 上（不是 <html>）：这样 ComfyUI 自己换主题时不会互相污染。
+ *   data-scheme=light|dark|data-tint=warm|cool|data-accent=violet|amber|teal|rose
+ *   auto 档由 app.js读 ComfyUI 的 body.dark 决定具体落在哪个值上。
+ *
+ * 窄屏用真实的媒体查询（<720px），因为 iframe 的视口宽度就是面板宽度。
+ */
+
+/* ═══════════════════════════════════════════════════════════════
+   段 A · 几何 / 排版
+   ═══════════════════════════════════════════════════════════════ */
+:root{
+  --r-ctl:6px;
+  --r-card:10px;
+  --r-pill:999px;
+
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+  /* --font-prose：提示词/负面词这类**长英文句**专用，刻意不用等宽。
+     Consolas 字腔窄、x 高度低、连笔重，读英文长句很吃力（用户反馈"有点丑"）。
+     Segoe UI Variable 是 Win11 自带可变字体，字腔开、字重连续。
+     ⚠️ 本机字体库里**没有** Cascadia Code / JetBrains Mono / SF Mono
+     （243 个字体里等宽只有 consola*）—— 写这些名字会静默回退到 Consolas。
+     真正需要等宽对齐的地方（代码块、字数计数）继续用 --font-mono。*/
+  --font-prose:"Segoe UI Variable Text","Segoe UI",-apple-system,"Microsoft YaHei UI","Microsoft YaHei",sans-serif;
+  --font-mono:ui-monospace,"Cascadia Mono","Segoe UI Mono",Consolas,"SF Mono","Microsoft YaHei",monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   段 B-1 · 中性色阶 ·浅 + 暖墨（默认底色）
+   ⚠️ 写成 `[data-tint="warm"]` 而不是只写 :root ——
+   app.js 切色系时会显式设 data-tint（琥珀=warm，其余=cool），
+   那个属性一旦存在，`:root` 就选不中它了（:root 只在 html 上）。
+   所以暖墨必须同时挂在两个选择器上，跟冷墨段对称。
+   ═══════════════════════════════════════════════════════════════ */
+:root,
+[data-scheme="light"][data-tint="warm"]{
+  --bg:#FAF8F4;
+  --surface:#FFFFFF;
+  --sunken:#F4F1EB;
+  --lift:#FFFFFF;
+  --drawer:#FBFAF7;
+  --scrim:rgba(28,25,23,.34);
+
+  --fg:#1C1917;               /* 15.2:1 on --bg */
+  --fg2:#6B6259;              /*  5.9:1 on --bg · AA 正文 */
+  --fg3:#9A9086;              /*  3.3:1 仅装饰 / 元信息 */
+
+  --line:rgba(28,25,23,.10);
+  --line2:rgba(28,25,23,.17);
+  --hover:rgba(28,25,23,.045);
+  --ring:rgba(28,25,23,.10);
+
+  --shadow-card:0 1px 2px rgba(28,25,23,.05);
+  --shadow-pop:0 16px 40px -16px rgba(28,25,23,.30), 0 2px 6px -2px rgba(28,25,23,.10);
+
+  /* 语义色 */
+  --ok:#15803D;
+  --danger:#B91C1C;
+  --ok-bg:rgba(29,158,117,.08);   --ok-line:rgba(29,158,117,.28);
+  --err-bg:rgba(214,69,69,.07);   --err-line:rgba(214,69,69,.28);   --err-fg:#C4342F;
+  /* 提示条（skill 详情里说明「哪些内容被剥离了」） */
+  --warn-bg:#FFF8E9; --warn-line:#EDD9A8; --warn-fg:#8A5A10;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   段 B-2 · 中性色阶 · 浅 + 冷墨（紫 / 青 / 玫 共用底色）
+   ⚠️ 必须带 data-scheme：只写 [data-tint="cool"] 的话，它和段 B-3 的
+      [data-scheme="dark"] 特异性相同（都是 0,1,0），谁在后面谁赢 ——
+      深色+冷底会掉进浅色那套去。四个段一律写全条件，别偷懒只留一个属性。
+   ═══════════════════════════════════════════════════════════════ */
+[data-scheme="light"][data-tint="cool"]{
+  --bg:#F8F7FC;
+  --surface:#FFFFFF;
+  --sunken:#F1EFF8;
+  --lift:#FFFFFF;
+  --drawer:#FAFAFE;
+
+  --fg:#1A1824;
+  --fg2:#66627A;
+  --fg3:#948FA8;
+
+  --line:rgba(26,24,36,.11);
+  --line2:rgba(26,24,36,.19);
+  --hover:rgba(26,24,36,.05);
+  --scrim:rgba(26,24,36,.36);
+  --ring:rgba(26,24,36,.11);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   段 B-3 · 中性色阶 · 深 + 暖墨
+   注意选择器就写 [data-scheme="dark"]，**故意不带 data-tint** ——
+   它是深色那一档的兜底：body 上只有 scheme 没有 tint（JS 还没跑完 / 读档失败）时靠它。
+   带 tint 的深冷底由段 B-4 特异性更高的选择器接手，两者不冲突。
+   ═══════════════════════════════════════════════════════════════ */
+[data-scheme="dark"]{
+  /* ★ 底色四档只用「明度」一个维度：越浮起越亮，凹槽永远最暗。
+     原来这里是 surface(1.2) > sunken(1.0) 的**反方向** —— 深色下凹槽比面板面亮，
+     视觉上会「鼓」出来而不是凹下去。已改为单调递增：
+     bg(0.44) < sunken(0.61) < surface(1.21) < lift(1.62)。 */
+  --bg:#100E0B;
+  --surface:#1F1C16;
+  --sunken:#171410;
+  --lift:#2A2620;
+  --drawer:#1A1713;
+  --scrim:rgba(0,0,0,.60);
+
+  --fg:#F5F1EA;               /* 14.1:1 on --bg */
+  --fg2:#B0A698;              /*  7.2:1 on --bg */
+  /* fg3 是装饰色，但它也压在 --sunken 上；#7C7266 在新 sunken 上只有 3.6:1。
+     提到 #8F8577 仍弱于 fg2，且在 sunken 上达AA。 */
+  --fg3:#8F8577;              /*  4.6:1 on --sunken 仅装饰 / 元信息 */
+
+  --line:rgba(245,241,234,.13);
+  --line2:rgba(245,241,234,.22);
+  --hover:rgba(245,241,234,.06);
+  --ring:rgba(245,241,234,.14);
+
+  --shadow-card:0 1px 2px rgba(0,0,0,.3);
+  --shadow-pop:0 20px 48px -18px rgba(0,0,0,.75), 0 2px 8px -2px rgba(0,0,0,.5);
+
+  --ok:#3FBF63;
+  --danger:#F87171;
+  --ok-bg:rgba(93,202,165,.10); --ok-line:rgba(93,202,165,.30);
+  --err-bg:rgba(255,120,120,.10); --err-line:rgba(255,120,120,.30); --err-fg:#FF9B9B;
+  --warn-bg:rgba(232,199,122,.10); --warn-line:rgba(232,199,122,.28); --warn-fg:#E0C285;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   段 B-4 · 中性色阶 · 深 + 冷墨
+   ═══════════════════════════════════════════════════════════════ */
+[data-scheme="dark"][data-tint="cool"]{
+  /* 同段 B-3 的方向：bg < sunken < surface < lift，凹槽最暗。 */
+  --bg:#100F17;
+  --surface:#221F2E;
+  --sunken:#171522;
+  --lift:#2E2A3D;
+  --drawer:#181622;
+  --scrim:rgba(0,0,0,.66);
+
+  --fg:#F2F0FA;
+  --fg2:#ABA6C2;              /*  7.6:1 on --bg */
+  /* #78738C 在新 sunken(#171522) 上只有 4.0:1，提到 #8A85A3 达 AA，仍弱于 fg2。 */
+  --fg3:#8A85A3;              /*  5.1:1 on --sunken 仅装饰 */
+
+  --line:rgba(242,240,250,.14);
+  --line2:rgba(242,240,250,.23);
+  --hover:rgba(242,240,250,.065);
+  --ring:rgba(242,240,250,.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   段 C · 强调色四色系
+   每个色系只声明派生变量，其余样式全部引用它们 ——
+   加一个色系 = 加14 行，而不是全局搜一遍 var()。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 紫（家族默认，与其它插件统一）
+   ⚠️ 选择器是 `:root, [data-accent="violet"]` 而不是只写后者：
+   body 上**可能一个主题属性都没有**（JS 还没跑、或读档失败），这时整个色系会解析成空，
+   品牌图标、按钮全变成透明黑。默认必须写在 :root 上兜底。
+   同理 [data-scheme] 那两段也是 `:root,` 开头 —— 这是"零属性也能正确渲染"的底线。 */
+:root,
+[data-accent="violet"]{
+  --acc:#6244C8;              /* 5.6:1 on 白底 · 白字其上 6.6:1 */
+  --acc-fg:#FFFFFF;
+  --acc-weak:#EFEAFF;
+  --acc-weak-fg:#4A2FA8;      /* 6.1:1 on --acc-weak */
+  --acc-line:#CFC0F5;
+  --acc-glow:rgba(98,68,200,.30);
+  /* 「我的气泡」+「已推卡底」共用的淡底。
+     ⚠️ 一律**直写 hex**，不用 color-mix()：它的计算值浏览器返回 oklab(...)，
+     任何按 rgba() 正则解析的测量脚本都会拿到 NaN（本项目已踩两次）。
+     20% = accent 20% + 面板底白，已逐色系核对：正文 5.4~6.9:1（AA）、
+     负面词 4.0~4.5 且明显弱于正文、与面板可辨差25~31。 */
+  --acc-ghost:#E0DAF4;
+  --acc-ghost-line:rgba(98,68,200,.26);   /* 直写 rgba，同 --acc-ghost 不走 color-mix */
+  /* 已推卡正文专用：底色是 --acc-ghost，--fg2 落在上面只有 4.4:1（低于 AA），
+     提到 7.2:1；未推卡的 --fg 是 17.4:1 —— 层级仍分得开，但读得清了 */
+  --acc-ghost-fg:#4B4B47;   /* 紫系 */
+  --mark-1:#8B6FE8; --mark-2:#5B3AC0;
+}
+/* 琥珀（暖调） */
+[data-accent="amber"]{
+  --acc:#B45309;
+  --acc-fg:#FFFFFF;
+  --acc-weak:#FDF3E7;
+  --acc-weak-fg:#92400E;
+  --acc-line:#F0D3B0;
+  --acc-glow:rgba(180,83,9,.28);
+  --acc-ghost:#F0DDCE;
+  --acc-ghost-line:rgba(180,83,9,.26);
+  /* 已推卡正文专用：底色是 --acc-ghost，--fg2 落在上面只有 4.4:1（低于 AA），
+     提到 7.2:1；未推卡的 --fg 是 17.4:1 —— 层级仍分得开，但读得清了 */
+  --acc-ghost-fg:#4A4038;   /* 琥珀系 */
+  --mark-1:#E08A3C; --mark-2:#B45309;
+}
+/* 青（冷调） */
+[data-accent="teal"]{
+  --acc:#0F766E;              /* 4.9:1 on 白底 */
+  --acc-fg:#FFFFFF;
+  --acc-weak:#E3F5F2;
+  --acc-weak-fg:#0B5D57;
+  --acc-line:#A8DCD6;
+  --acc-glow:rgba(15,118,110,.28);
+  --acc-ghost:#CFE4E2;
+  --acc-ghost-line:rgba(15,118,110,.26);
+  /* 已推卡正文专用：底色是 --acc-ghost，--fg2 落在上面只有 4.4:1（低于 AA），
+     提到 7.2:1；未推卡的 --fg 是 17.4:1 —— 层级仍分得开，但读得清了 */
+  --acc-ghost-fg:#3A4242;   /* 青系 */
+  --mark-1:#2AA79B; --mark-2:#0F766E;
+}
+/* 玫（暖偏红） */
+[data-accent="rose"]{
+  --acc:#BE123C;              /* 6.2:1 on 白底 */
+  --acc-fg:#FFFFFF;
+  --acc-weak:#FDE9EE;
+  --acc-weak-fg:#9B0F33;
+  --acc-line:#F5BFCE;
+  --acc-glow:rgba(190,18,60,.26);
+  --acc-ghost:#F2D0D8;
+  --acc-ghost-line:rgba(190,18,60,.26);
+  /* 已推卡正文专用：底色是 --acc-ghost，--fg2 落在上面只有 4.4:1（低于 AA），
+     提到 7.2:1；未推卡的 --fg 是 17.4:1 —— 层级仍分得开，但读得清了 */
+  --acc-ghost-fg:#4B3940;   /* 玫系 */
+  --mark-1:#E8637F; --mark-2:#BE123C;
+}
+
+/* 深色下的四个色系 —— 统一提亮、降饱和，才在暗底上不刺眼。
+   注意深底不能 color-mix 白，要用 rgba 直接给透明度。 */
+[data-scheme="dark"][data-accent="violet"]{
+  --acc:#A78BFA;
+  --acc-fg:#1A1030;
+  --acc-weak:rgba(167,139,250,.15);
+  --acc-weak-fg:#C4B0FB;
+  --acc-line:rgba(167,139,250,.32);
+  --acc-glow:rgba(167,139,250,.26);
+  /* 深色卡底同样直写 hex（= 亮紫 20% + 冷墨面板 #221F2E）。
+     为什么不用 rgba()：半透明会透出面板底，同一张卡在冷/暖墨两种面板下颜色会飘。
+     已核对：正文 5.93:1、负面词 4.00:1 且明显弱于正文、与面板可辨差 2.7。 */
+  --acc-ghost:#3D3557;
+  --acc-ghost-line:rgba(167,139,250,.26);
+  --acc-ghost-fg:var(--fg);   /* 深底上主文字本就够亮，不需再混 */
+  --mark-1:#C4B0FB; --mark-2:#8B6FE8;
+}
+[data-scheme="dark"][data-accent="amber"]{
+  --acc:#F0A868;
+  --acc-fg:#1C1206;
+  --acc-weak:rgba(240,168,104,.14);
+  --acc-weak-fg:#F5C08A;
+  --acc-line:rgba(240,168,104,.30);
+  --acc-glow:rgba(240,168,104,.24);
+  --acc-ghost:#493826;                 /* 亮琥珀 20% + 暖墨面板 #1F1C16 */
+  --acc-ghost-line:rgba(240,168,104,.24);
+  --acc-ghost-fg:var(--fg);   /* 深底上主文字本就够亮，不需再混 */
+  --mark-1:#F5C08A; --mark-2:#E08A3C;
+}
+[data-scheme="dark"][data-accent="teal"]{
+  --acc:#4FD1C5;
+  --acc-fg:#04211F;
+  --acc-weak:rgba(79,209,197,.14);
+  --acc-weak-fg:#7FE0D6;
+  --acc-line:rgba(79,209,197,.30);
+  --acc-glow:rgba(79,209,197,.24);
+  --acc-ghost:#2B434C;                 /* 亮青 20% + 冷墨面板 #221F2E */
+  --acc-ghost-line:rgba(79,209,197,.24);
+  --acc-ghost-fg:var(--fg);   /* 深底上主文字本就够亮，不需再混 */
+  --mark-1:#7FE0D6; --mark-2:#2AA79B;
+}
+[data-scheme="dark"][data-accent="rose"]{
+  --acc:#FB8FA6;
+  --acc-fg:#2A0810;
+  --acc-weak:rgba(251,143,166,.14);
+  --acc-weak-fg:#FDA9BB;
+  --acc-line:rgba(251,143,166,.30);
+  --acc-glow:rgba(251,143,166,.24);
+  --acc-ghost:#4D3546;                 /* 亮玫 20% + 冷墨面板 #221F2E */
+  --acc-ghost-line:rgba(251,143,166,.24);
+  --acc-ghost-fg:var(--fg);   /* 深底上主文字本就够亮，不需再混 */
+  --mark-1:#FDA9BB; --mark-2:#E8637F;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   段 D · 旧别名已全部删除（P1 收尾）
+   原先这里有一组 --brand-* / --card / --panel-bg / --push-* 别名做过渡。
+   P1 已把 style.css 与 index.html 里 99 处引用一次性改成新名，别名不再有人用 ——
+   留着不是兼容，是给未来埋雷：两套名字迟早不同步，那时比没有主题系统还糟。
+   ═══════════════════════════════════════════════════════════════ */
